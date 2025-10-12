@@ -1,0 +1,22 @@
+name: recursive_reasoning.trm_core@SimpleTRM
+loss:
+  name: losses@ACTLossHead  # Dummy, model includes loss
+  loss_type: stablemax_cross_entropy
+
+H_cycles: 3  # T in paper (deep recursion cycles)
+L_cycles: 6  # n in paper (latent recursion cycles)
+
+H_layers: 0  # Not used
+L_layers: 2  # Number of transformer layers
+
+hidden_size: 512
+num_heads: 8
+expansion: 4
+
+puzzle_emb_ndim: ${.hidden_size}
+puzzle_emb_len: 16
+
+pos_encodings: rope
+forward_dtype: bfloat16
+
+mlp_t: False  # use MLP on sequence length instead of attention

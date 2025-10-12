@@ -1,0 +1,47 @@
+# Clean config for pretrain2.py (paper-exact training loop)
+
+defaults:
+  - arch: trm_core
+  - _self_
+
+hydra:
+  output_subdir: null
+
+# Data paths
+data_paths: ['data/arc-aug-1000']
+data_paths_test: []
+
+evaluators:
+  - name: arc@ARC
+
+# Training hyperparameters
+global_batch_size: 768
+epochs: 100000
+eval_interval: 10000
+checkpoint_every_eval: True
+
+# Supervision steps (as in paper)
+N_supervision: 16  # Fixed supervision steps per example
+
+# Optimizer settings
+lr: 1e-4
+lr_min_ratio: 1.0
+lr_warmup_steps: 2000
+
+# Standard LM hyperparameters (from Llama)
+beta1: 0.9
+beta2: 0.95
+weight_decay: 0.1
+
+# Puzzle embeddings training
+puzzle_emb_lr: 1e-2
+puzzle_emb_weight_decay: 0.1
+
+# Misc
+seed: 0
+min_eval_interval: 0  # When to start evaluation
+
+# EMA (Exponential Moving Average)
+ema: False
+ema_rate: 0.999
+freeze_weights: False  # If True, freeze weights and only learn embeddings
