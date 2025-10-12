@@ -337,7 +337,21 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
             
             # Postprocess
             count = max(reduced_metrics["count"], 1)  # Avoid NaNs
-            reduced_metrics = {f"train/{k}": v / (global_batch_size if k.endswith("loss") else count) for k, v in reduced_metrics.items()}
+            
+            # Some metrics should be averaged per batch, not per correct example
+            per_batch_metrics = {
+                "pairwise_cosine_sim",  # Diversity metrics
+                "pairwise_l2_dist",
+                "branch_std",
+                "steps",  # ACT steps (average across all examples, not just correct)
+            }
+            
+            reduced_metrics = {
+                f"train/{k}": v / (
+                    global_batch_size if (k.endswith("loss") or k in per_batch_metrics) else count
+                )
+                for k, v in reduced_metrics.items()
+            }
 
             reduced_metrics["train/lr"] = lr_this_step
             return reduced_metrics

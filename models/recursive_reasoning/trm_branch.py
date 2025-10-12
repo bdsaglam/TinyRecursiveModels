@@ -1,12 +1,9 @@
 """
-Simplified Tiny Recursive Model (TRM) implementation.
-
-This implementation closely follows the pseudocode from the TRM paper,
-making it easier to understand and modify while maintaining full compatibility
-with the existing training infrastructure.
+Tiny Recursive Model (TRM) implementation with multi-branch reasoning.
 """
 
 import math
+from dataclasses import dataclass
 from typing import Dict, Tuple
 
 import torch
@@ -16,16 +13,26 @@ from torch import nn
 from models.common import trunc_normal_init_
 from models.layers import CastedEmbedding, CastedLinear, CosSin, RotaryEmbedding
 from models.losses import DiversityLoss
-from models.recursive_reasoning.trm_simple import (
-    SimpleTRMBlock,
-    SimpleTRMCarry,
-    SimpleTRMConfig,
-    SimpleTRMInnerCarry,
-    SimpleTRMNet,
+from models.recursive_reasoning.trm_common import (
+    TRMBlock,
+    TRMCarry,
+    TRMConfig,
+    TRMNet,
 )
 from models.sparse_embedding import CastedSparseEmbedding
 
+
 IGNORE_LABEL_ID = -100
+
+
+@dataclass
+class BranchTRMCarry:
+    inner_carry: TRMCarry
+
+    steps: torch.Tensor
+    halted: torch.Tensor
+
+    current_data: Dict[str, torch.Tensor]
 
 
 # ============================================================================
@@ -33,24 +40,26 @@ IGNORE_LABEL_ID = -100
 # ============================================================================
 
 
-class BranchTRMConfig(SimpleTRMConfig):
+class BranchTRMConfig(TRMConfig):
     # Multi-branch reasoning via clone-perturb-recurse-aggregate
     # z: [B, S, H] is cloned into M branches at runtime
     # Each branch runs latent_recursion independently
     # Diversity loss applied to second half of H (H/2:H are residual dims)
     # First half (0:H/2) allowed to converge (shared understanding)
-    num_branches: int = 1  # M parallel reasoning branches (1 = standard TRM)
+    num_branches: int = 4  # M parallel reasoning branches (must be >= 2)
+
+    # Branch aggregation strategy
+    branch_aggregation: str = "mean"  # Options: mean, attention, mlp, weighted_mean
 
     # Diversity loss configuration
     diversity_loss_type: str = "none"  # Options: none, cosine_repulsion, orthogonality,
-    # repulsion_with_radius, dpp
+    # repulsion_with_radius
     diversity_loss_weight: float = 0.0  # λ_div weight for diversity loss
     branch_magnitude_weight: float = 0.0  # λ_mag to prevent branch dims from exploding
 
     # Hyperparameters for specific diversity losses
     diversity_alpha: float = 1.0  # Temperature for repulsion_with_radius
     diversity_rho: float = 2.0  # Radius bound for repulsion_with_radius
-    diversity_epsilon: float = 1e-5  # Stability constant for DPP
 
 
 # ============================================================================
@@ -126,9 +135,7 @@ class BranchTRMInner(nn.Module):
         # The core network (used for both z and y updates)
         # ====================================================================
 
-        self.net = SimpleTRMNet(
-            layers=[SimpleTRMBlock(config) for _ in range(config.L_layers)]
-        )
+        self.net = TRMNet(layers=[TRMBlock(config) for _ in range(config.L_layers)])
 
         # ====================================================================
         # Initial states for y and z
@@ -155,6 +162,38 @@ class BranchTRMInner(nn.Module):
         # ====================================================================
 
         self.diversity_loss_fn = DiversityLoss()
+
+        # ====================================================================
+        # Branch aggregation modules (learnable)
+        # ====================================================================
+
+        assert config.num_branches >= 2, (
+            "BranchTRM requires num_branches >= 2. Use SimpleTRM for single-branch."
+        )
+
+        if config.branch_aggregation == "attention":
+            # Self-attention over M branches
+            self.branch_attention = nn.MultiheadAttention(
+                embed_dim=config.hidden_size,
+                num_heads=config.num_heads,
+                batch_first=True,
+            )
+        elif config.branch_aggregation == "mlp":
+            # MLP that takes [M*H] and outputs [H]
+            self.branch_mlp = nn.Sequential(
+                CastedLinear(
+                    config.num_branches * config.hidden_size,
+                    config.hidden_size * 2,
+                    bias=True,
+                ),
+                nn.GELU(),
+                CastedLinear(config.hidden_size * 2, config.hidden_size, bias=True),
+            )
+        elif config.branch_aggregation == "weighted_mean":
+            # Learnable weights for each branch
+            self.branch_weights = nn.Parameter(
+                torch.ones(config.num_branches) / config.num_branches
+            )
 
         # ====================================================================
         # Q-head initialization (for halting)
@@ -244,7 +283,7 @@ class BranchTRMInner(nn.Module):
 
     def _fan_in_latent_vectors(self, z_branches: torch.Tensor) -> torch.Tensor:
         """
-        Aggregate M branches back to single z.
+        Aggregate M branches back to single z using learnable mechanisms.
 
         Args:
             z_branches: [B, M, S, H] multi-branch latent states
@@ -252,8 +291,51 @@ class BranchTRMInner(nn.Module):
         Returns:
             z: [B, S, H] aggregated latent state
         """
-        # Mean over M dimension
-        z_aggregated = z_branches.mean(dim=1)  # [B, S, H]
+        B, M, S, H = z_branches.shape
+
+        if self.config.branch_aggregation == "mean":
+            # Simple mean aggregation (baseline)
+            return z_branches.mean(dim=1)  # [B, S, H]
+
+        if self.config.branch_aggregation == "attention":
+            # Self-attention over M branches
+            # Reshape: [B, M, S, H] -> [B*S, M, H]
+            z_flat = z_branches.permute(0, 2, 1, 3).reshape(B * S, M, H)
+
+            # Cast to float32 for attention (torch.nn.MultiheadAttention requirement)
+            z_flat_f32 = z_flat.to(torch.float32)
+
+            # Apply attention over M dimension
+            attn_out, _ = self.branch_attention(
+                z_flat_f32, z_flat_f32, z_flat_f32, need_weights=False
+            )  # [B*S, M, H]
+
+            # Mean over M (could also take first token or use CLS)
+            z_aggregated = attn_out.mean(dim=1)  # [B*S, H]
+
+            # Reshape back: [B*S, H] -> [B, S, H]
+            z_aggregated = z_aggregated.view(B, S, H).to(z_branches.dtype)
+
+        elif self.config.branch_aggregation == "mlp":
+            # Concatenate all branches and pass through MLP
+            # [B, M, S, H] -> [B, S, M*H]
+            z_concat = z_branches.permute(0, 2, 1, 3).reshape(B, S, M * H)
+
+            # MLP: [B, S, M*H] -> [B, S, H]
+            z_aggregated = self.branch_mlp(z_concat.to(self.forward_dtype))
+
+        elif self.config.branch_aggregation == "weighted_mean":
+            # Learnable weighted average
+            # Softmax over branch weights to ensure they sum to 1
+            weights = F.softmax(self.branch_weights, dim=0)  # [M]
+
+            # Weighted sum: [B, M, S, H] * [M] -> [B, S, H]
+            z_aggregated = (z_branches * weights.view(1, M, 1, 1)).sum(dim=1)
+
+        else:
+            raise ValueError(
+                f"Unknown branch_aggregation: {self.config.branch_aggregation}"
+            )
 
         return z_aggregated
 
@@ -270,7 +352,7 @@ class BranchTRMInner(nn.Module):
         Returns:
             diversity_loss: scalar loss value
         """
-        if self.config.num_branches <= 1 or self.config.diversity_loss_type == "none":
+        if self.config.diversity_loss_type == "none":
             return torch.tensor(0.0, device=z_branches.device, dtype=z_branches.dtype)
 
         B, M, S, H = z_branches.shape
@@ -284,7 +366,6 @@ class BranchTRMInner(nn.Module):
         kwargs = {
             "alpha": self.config.diversity_alpha,
             "rho": self.config.diversity_rho,
-            "epsilon": self.config.diversity_epsilon,
         }
 
         return self.diversity_loss_fn(
@@ -303,9 +384,6 @@ class BranchTRMInner(nn.Module):
         Returns:
             magnitude_loss: scalar ||z_residuals||²
         """
-        if self.config.num_branches <= 1:
-            return torch.tensor(0.0, device=z_branches.device, dtype=z_branches.dtype)
-
         H_half = self.config.hidden_size // 2
 
         # Extract second half from all branches: [B, M, S, H/2]
@@ -315,6 +393,69 @@ class BranchTRMInner(nn.Module):
         magnitude_loss = (branch_residuals**2).mean()
 
         return magnitude_loss
+
+    def _compute_diversity_metrics(
+        self, z_branches: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """
+        Compute interpretable diversity metrics for monitoring collapse.
+
+        These metrics measure ACTUAL diversity independent of the loss function.
+        If these metrics approach zero, branches have collapsed.
+
+        Args:
+            z_branches: [B, M, S, H] multi-branch latent states
+
+        Returns:
+            dict with diversity metrics:
+                - pairwise_cosine_sim: Mean cosine similarity between branches (0=orthogonal, 1=identical)
+                - pairwise_l2_dist: Mean L2 distance between branches (0=identical, >0=diverse)
+                - branch_std: Standard deviation across branches (0=collapsed, >0=diverse)
+        """
+        B, M, S, H = z_branches.shape
+        H_half = H // 2
+
+        # Extract second half (residual dimensions where diversity matters)
+        branch_residuals = z_branches[..., H_half:]  # [B, M, S, H/2]
+
+        # Flatten for easier computation: [M, B*S*H/2]
+        residuals_flat = branch_residuals.permute(1, 0, 2, 3).reshape(M, -1)
+
+        # === Metric 1: Pairwise Cosine Similarity ===
+        # Normalize each branch
+        residuals_norm = F.normalize(residuals_flat, dim=1)  # [M, B*S*H/2]
+
+        # Compute pairwise similarities: [M, M]
+        similarity_matrix = torch.mm(residuals_norm, residuals_norm.t())
+
+        # Extract upper triangle (exclude diagonal)
+        mask = torch.triu(torch.ones(M, M, device=similarity_matrix.device), diagonal=1)
+        pairwise_sims = similarity_matrix[mask.bool()]
+        mean_cosine_sim = (
+            pairwise_sims.mean()
+        )  # Close to 1 = collapse, close to 0 = diverse
+
+        # === Metric 2: Pairwise L2 Distance ===
+        # Compute pairwise L2 distances
+        l2_dists = []
+        for i in range(M):
+            for j in range(i + 1, M):
+                dist = torch.norm(residuals_flat[i] - residuals_flat[j])
+                l2_dists.append(dist)
+        mean_l2_dist = torch.stack(
+            l2_dists
+        ).mean()  # Close to 0 = collapse, >0 = diverse
+
+        # === Metric 3: Standard Deviation Across Branches ===
+        # Measure spread across M branches at each position
+        branch_std = branch_residuals.std(dim=1).mean()  # [B, S, H/2] -> scalar
+        # Close to 0 = all branches identical (collapse)
+
+        return {
+            "pairwise_cosine_sim": mean_cosine_sim,  # Lower is better (more diverse)
+            "pairwise_l2_dist": mean_l2_dist,  # Higher is better (more diverse)
+            "branch_std": branch_std,  # Higher is better (more diverse)
+        }
 
     def latent_recursion(
         self,
@@ -362,7 +503,7 @@ class BranchTRMInner(nn.Module):
         n: int = 6,
         T: int = 3,
     ) -> Tuple[
-        SimpleTRMInnerCarry,
+        TRMCarry,
         torch.Tensor,
         Tuple[torch.Tensor, torch.Tensor],
         Dict[str, torch.Tensor],
@@ -370,85 +511,76 @@ class BranchTRMInner(nn.Module):
         """
         Deep recursion with multi-branch exploration via cloning.
 
-        For num_branches > 1:
+        Algorithm:
         1. Clone z into M branches with perturbations
-        2. Run latent_recursion independently on each branch
-        3. Apply diversity loss to second half of H (residual dimensions)
-        4. Aggregate branches back to single z
-        5. Update y using aggregated z
+        2. Run latent_recursion independently on each branch for T-1 cycles (no grad)
+        3. Run latent_recursion independently on each branch for 1 cycle (with grad)
+        4. Compute diversity loss and metrics on second half of H (residual dimensions)
+        5. Aggregate branches back to single z using learnable mechanism
+        6. Update y using aggregated z
 
         Returns: (new_carry, lm_output, q_logits, auxiliary_losses)
         """
+        # Multi-branch: parallel exploration
+        # Key: branches evolve independently through ALL T cycles, aggregate ONCE at end
+        M = self.config.num_branches
+        B, S, H = z.shape
 
-        if self.config.num_branches <= 1:
-            # Standard TRM: single trajectory
-            with torch.no_grad():
-                for _ in range(T - 1):
-                    y, z = self.latent_recursion(x, y, z, cos_sin, n)
+        # === Initialize M independent branch trajectories ===
+        z_branches_flat = self._fan_out_latent_vector(z, M).view(
+            B * M, S, H
+        )  # [B*M, S, H]
 
-            # Run 1 cycle with gradients
-            y, z = self.latent_recursion(x, y, z, cos_sin, n)
+        # Expand x and y for all branches (constant across cycles)
+        x_expanded = (
+            x.unsqueeze(1).expand(B, M, S, H).reshape(B * M, S, H)
+        )  # [B*M, S, H]
+        y_expanded = (
+            y.unsqueeze(1).expand(B, M, S, H).reshape(B * M, S, H)
+        )  # [B*M, S, H]
 
-            auxiliary_losses = {
-                "diversity_loss": torch.tensor(0.0, device=z.device, dtype=z.dtype),
-                "branch_magnitude_loss": torch.tensor(
-                    0.0, device=z.device, dtype=z.dtype
-                ),
-            }
+        # === Run T-1 cycles without gradients ===
+        # Each branch evolves independently, no aggregation
+        with torch.no_grad():
+            for t in range(T - 1):
+                # Run latent recursion on all branches in parallel
+                y_expanded, z_branches_flat = self.latent_recursion(
+                    x_expanded, y_expanded, z_branches_flat, cos_sin, n
+                )
 
-        else:
-            # Multi-branch: parallel exploration
-            # Key: branches evolve independently through ALL T cycles, aggregate ONCE at end
-            M = self.config.num_branches
-            B, S, H = z.shape
+        # === Run 1 cycle WITH gradients ===
+        # Branches continue their independent evolution
+        y_expanded, z_branches_flat = self.latent_recursion(
+            x_expanded, y_expanded, z_branches_flat, cos_sin, n
+        )
+        z_branches = z_branches_flat.view(B, M, S, H)  # [B, M, S, H]
+        y_branches = y_expanded.view(B, M, S, H)  # [B, M, S, H]
 
-            # === Initialize M independent branch trajectories ===
-            z_branches_flat = self._fan_out_latent_vector(z, M).view(
-                B * M, S, H
-            )  # [B*M, S, H]
+        # === Compute diversity loss while branches are still separate ===
+        diversity_loss = self._compute_branch_diversity_loss(z_branches)
+        branch_magnitude_loss = self._compute_branch_magnitude_loss(z_branches)
 
-            # Expand x and y for all branches (constant across cycles)
-            x_expanded = (
-                x.unsqueeze(1).expand(B, M, S, H).reshape(B * M, S, H)
-            )  # [B*M, S, H]
-            y_expanded = (
-                y.unsqueeze(1).expand(B, M, S, H).reshape(B * M, S, H)
-            )  # [B*M, S, H]
+        # === Compute actual diversity metrics (for monitoring collapse) ===
+        diversity_metrics = self._compute_diversity_metrics(z_branches)
 
-            # === Run T-1 cycles without gradients ===
-            # Each branch evolves independently, no aggregation
-            with torch.no_grad():
-                for t in range(T - 1):
-                    # Run latent recursion on all branches in parallel
-                    y_expanded, z_branches_flat = self.latent_recursion(
-                        x_expanded, y_expanded, z_branches_flat, cos_sin, n
-                    )
+        auxiliary_losses = {
+            "diversity_loss": diversity_loss,
+            "branch_magnitude_loss": branch_magnitude_loss,
+            **diversity_metrics,  # Add metrics to outputs
+        }
 
-            # === Run 1 cycle WITH gradients ===
-            # Branches continue their independent evolution
-            y_expanded, z_branches_flat = self.latent_recursion(
-                x_expanded, y_expanded, z_branches_flat, cos_sin, n
-            )
-            z_branches = z_branches_flat.view(B, M, S, H)  # [B, M, S, H]
+        # === NOW aggregate once for final y update ===
+        z = self._fan_in_latent_vectors(z_branches)  # [B, M, S, H] -> [B, S, H]
+        y = self._fan_in_latent_vectors(y_branches)  # [B, M, S, H] -> [B, S, H]
 
-            # === Compute diversity loss while branches are still separate ===
-            diversity_loss = self._compute_branch_diversity_loss(z_branches)
-            branch_magnitude_loss = self._compute_branch_magnitude_loss(z_branches)
+        # One more latent recursion to update y and z
+        y, z = self.latent_recursion(x, y, z, cos_sin, n)
 
-            auxiliary_losses = {
-                "diversity_loss": diversity_loss,
-                "branch_magnitude_loss": branch_magnitude_loss,
-            }
+        # Update y once using aggregated z
+        y = self.net(y, z, cos_sin)
 
-            # === NOW aggregate once for final y update ===
-            z = self._fan_in_latent_vectors(z_branches)  # [B, M, S, H] -> [B, S, H]
-            y = y_expanded.mean(dim=1)
-
-            # Update y once using aggregated z
-            y = self.net(y, z, cos_sin)
-
-        # Compute outputs (same for both single and multi-branch)
-        new_carry = SimpleTRMInnerCarry(y=y.detach(), z=z.detach())
+        # Compute outputs
+        new_carry = TRMCarry(y=y.detach(), z=z.detach())
         lm_output = self.lm_head(y)[:, self.puzzle_emb_len :]
         q_logits = self.q_head(y[:, 0]).to(torch.float32)
 
@@ -459,7 +591,7 @@ class BranchTRMInner(nn.Module):
             auxiliary_losses,
         )
 
-    def empty_carry(self, batch_size: int) -> SimpleTRMInnerCarry:
+    def empty_carry(self, batch_size: int) -> TRMCarry:
         """Create empty carry for a new batch."""
         y = torch.empty(
             batch_size,
@@ -468,8 +600,7 @@ class BranchTRMInner(nn.Module):
             dtype=self.forward_dtype,
         )
 
-        # z is always [B, S, H] regardless of num_branches
-        # Branching is implicit in the H dimension
+        # z is [B, S, H] - branching happens at runtime via fan-out/fan-in
         z = torch.empty(
             batch_size,
             self.config.seq_len + self.puzzle_emb_len,
@@ -477,29 +608,25 @@ class BranchTRMInner(nn.Module):
             dtype=self.forward_dtype,
         )
 
-        return SimpleTRMInnerCarry(y=y, z=z)
+        return TRMCarry(y=y, z=z)
 
-    def reset_carry(
-        self, reset_flag: torch.Tensor, carry: SimpleTRMInnerCarry
-    ) -> SimpleTRMInnerCarry:
+    def reset_carry(self, reset_flag: torch.Tensor, carry: TRMCarry) -> TRMCarry:
         """Reset carry to initial states based on reset_flag."""
         new_y = torch.where(reset_flag.view(-1, 1, 1), self.y_init, carry.y)
         new_z = torch.where(reset_flag.view(-1, 1, 1), self.z_init, carry.z)
 
-        return SimpleTRMInnerCarry(y=new_y, z=new_z)
+        return TRMCarry(y=new_y, z=new_z)
 
     def forward(
-        self, carry: SimpleTRMInnerCarry, batch: Dict[str, torch.Tensor]
+        self, carry: TRMCarry, batch: Dict[str, torch.Tensor]
     ) -> Tuple[
-        SimpleTRMInnerCarry,
+        TRMCarry,
         torch.Tensor,
         Tuple[torch.Tensor, torch.Tensor],
         Dict[str, torch.Tensor],
     ]:
         """
-        Forward pass: runs deep recursion to improve the answer.
-
-        Automatically handles both single-branch [B,S,H] and multi-branch [B,M,S,H] modes.
+        Forward pass: runs deep recursion with multi-branch exploration.
 
         Returns: (new_carry, output, q_logits, auxiliary_losses)
         """
@@ -545,11 +672,11 @@ class BranchTRM(nn.Module):
         """Expose puzzle embeddings for optimizer access."""
         return self.inner.puzzle_emb
 
-    def initial_carry(self, batch: Dict[str, torch.Tensor]) -> SimpleTRMCarry:
+    def initial_carry(self, batch: Dict[str, torch.Tensor]) -> BranchTRMCarry:
         """Create initial carry for a new batch."""
         batch_size = batch["inputs"].shape[0]
 
-        return SimpleTRMCarry(
+        return BranchTRMCarry(
             inner_carry=self.inner.empty_carry(batch_size),
             steps=torch.zeros((batch_size,), dtype=torch.int32),
             halted=torch.ones((batch_size,), dtype=torch.bool),  # Start halted
@@ -557,8 +684,8 @@ class BranchTRM(nn.Module):
         )
 
     def forward(
-        self, carry: SimpleTRMCarry, batch: Dict[str, torch.Tensor]
-    ) -> Tuple[SimpleTRMCarry, Dict[str, torch.Tensor]]:
+        self, carry: BranchTRMCarry, batch: Dict[str, torch.Tensor]
+    ) -> Tuple[BranchTRMCarry, Dict[str, torch.Tensor]]:
         """
         Forward pass with ACT logic.
 
@@ -602,6 +729,14 @@ class BranchTRM(nn.Module):
             "branch_magnitude_loss": auxiliary_losses.get(
                 "branch_magnitude_loss", torch.tensor(0.0)
             ),
+            # Add diversity metrics for monitoring collapse
+            "pairwise_cosine_sim": auxiliary_losses.get(
+                "pairwise_cosine_sim", torch.tensor(0.0)
+            ),
+            "pairwise_l2_dist": auxiliary_losses.get(
+                "pairwise_l2_dist", torch.tensor(0.0)
+            ),
+            "branch_std": auxiliary_losses.get("branch_std", torch.tensor(0.0)),
         }
 
         # ====================================================================
@@ -644,6 +779,6 @@ class BranchTRM(nn.Module):
                         )
                     )
 
-        return SimpleTRMCarry(
+        return BranchTRMCarry(
             new_inner_carry, new_steps, halted, new_current_data
         ), outputs

@@ -49,8 +49,7 @@ no_ACT_continue: True
 # ============================================================================
 
 # Number of parallel reasoning branches (M)
-# Set to 1 for standard TRM (baseline, no branching)
-# Try 2-8 for multi-branch exploration
+# Recommended: 2-8 branches for multi-path exploration
 #
 # Algorithm (key: branches evolve independently through ALL T cycles):
 #   1. Initialize: z [B,S,H] -> z_branches [B,M,S,H] with perturbations on H/2:H
@@ -61,13 +60,27 @@ no_ACT_continue: True
 #   3. For 1 cycle (with grad):
 #      - Same as above, branches continue independent evolution
 #   4. Compute diversity loss on [B,M,S,H] (branches still separate)
-#   5. Aggregate ONCE: [B,M,S,H] -> [B,S,H] via mean
+#   5. Aggregate ONCE: [B,M,S,H] -> [B,S,H] via learnable aggregation
 #   6. Update y using aggregated z
 #
 # Critical: branches maintain separate trajectories through ALL T cycles,
 # only aggregate at the very end for y update. This enables true parallel
 # exploration without premature collapse.
-num_branches: 1
+num_branches: 4
+
+# ============================================================================
+# Branch Aggregation Strategy
+# ============================================================================
+
+# How to combine M branches back to single z
+# Options:
+#   - "mean": Simple average (baseline, no extra parameters)
+#   - "weighted_mean": Learnable weights per branch (M params)
+#   - "attention": Self-attention over M branches (learns to weight dynamically)
+#   - "mlp": MLP that takes concat([z_1,...,z_M]) -> z (most expressive)
+#
+# Recommendation: Start with "attention" or "mlp" to preserve information
+branch_aggregation: "mean"
 
 # ============================================================================
 # Diversity Loss Configuration
@@ -79,7 +92,6 @@ num_branches: 1
 #   - "cosine_repulsion": Level 1 - Simple pairwise cosine penalty
 #   - "orthogonality": Level 1 - Matrix orthogonality constraint
 #   - "repulsion_with_radius": Level 2 - Bounded diversity with radius constraint
-#   - "dpp": Level 3 - Determinantal Point Process diversity (expensive)
 diversity_loss_type: "none"
 
 # Loss weights
@@ -89,30 +101,35 @@ branch_magnitude_weight: 0.0  # λ_mag - prevents branch dims from exploding (tr
 # Hyperparameters for specific diversity losses
 diversity_alpha: 1.0  # Temperature for repulsion_with_radius
 diversity_rho: 2.0  # Radius bound for repulsion_with_radius
-diversity_epsilon: 1e-5  # Stability constant for DPP
 
 # ============================================================================
 # Example Configurations
 # ============================================================================
 #
-# Level 0 - Baseline (no branching):
-#   num_branches: 1
-#   diversity_loss_type: "none"
-#
 # Level 1 - Simple Branching with Cosine Repulsion:
 #   num_branches: 4
+#   branch_aggregation: "mean"
 #   diversity_loss_type: "cosine_repulsion"
 #   diversity_loss_weight: 0.01
 #   branch_magnitude_weight: 0.001
 #
 # Level 1 - Orthogonality Constraint:
 #   num_branches: 4
+#   branch_aggregation: "mean"
 #   diversity_loss_type: "orthogonality"
+#   diversity_loss_weight: 0.01
+#   branch_magnitude_weight: 0.001
+#
+# Level 2 - Learnable Aggregation with Attention:
+#   num_branches: 4
+#   branch_aggregation: "attention"
+#   diversity_loss_type: "cosine_repulsion"
 #   diversity_loss_weight: 0.01
 #   branch_magnitude_weight: 0.001
 #
 # Level 2 - Bounded Diversity:
 #   num_branches: 4
+#   branch_aggregation: "mean"
 #   diversity_loss_type: "repulsion_with_radius"
 #   diversity_loss_weight: 0.01
 #   branch_magnitude_weight: 0.001
