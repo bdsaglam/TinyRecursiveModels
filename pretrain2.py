@@ -66,6 +66,9 @@ class PretrainConfig(pydantic.BaseModel):
     puzzle_emb_lr: float
     puzzle_emb_weight_decay: float
 
+    # Supervision steps (as in paper)
+    N_supervision: int = 16  # Fixed supervision steps per example
+
     # Names
     project_name: Optional[str] = None
     run_name: Optional[str] = None
@@ -88,7 +91,6 @@ class TrainState:
     model: nn.Module
     optimizers: Sequence[torch.optim.Optimizer]
     optimizer_lrs: Sequence[float]
-    carry: Any
 
     step: int
     total_steps: int
@@ -123,14 +125,13 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
         causal=False  # Non-autoregressive
     )
 
-    # Instantiate model with loss head
+    # Instantiate model (trm_core includes loss computation, no wrapper needed)
     model_cls = load_model_class(config.arch.name)
-    loss_head_cls = load_model_class(config.arch.loss.name)
 
     with torch.device("cuda"):
         model: nn.Module = model_cls(model_cfg)
         print(model)
-        model = loss_head_cls(model, **config.arch.loss.__pydantic_extra__)  # type: ignore
+
         if "DISABLE_COMPILE" not in os.environ:
             model = torch.compile(model)  # type: ignore
 
@@ -160,7 +161,7 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
     elif config.freeze_weights:
         optimizers = [
             CastedSparseEmbeddingSignSGD_Distributed(
-                model.model.puzzle_emb.buffers(),  # type: ignore
+                model.puzzle_emb.buffers(),  # type: ignore
                 lr=0,  # Needs to be set by scheduler
                 weight_decay=config.puzzle_emb_weight_decay,
                 world_size=world_size
@@ -172,7 +173,7 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
     else:
         optimizers = [
             CastedSparseEmbeddingSignSGD_Distributed(
-                model.model.puzzle_emb.buffers(),  # type: ignore
+                model.puzzle_emb.buffers(),  # type: ignore
                 lr=0,  # Needs to be set by scheduler
                 weight_decay=config.puzzle_emb_weight_decay,
                 world_size=world_size
@@ -227,8 +228,7 @@ def init_train_state(config: PretrainConfig, train_metadata: PuzzleDatasetMetada
 
         model=model,
         optimizers=optimizers,
-        optimizer_lrs=optimizer_lrs,
-        carry=None
+        optimizer_lrs=optimizer_lrs
     )
 
 
@@ -249,8 +249,8 @@ def load_checkpoint(model: nn.Module, config: PretrainConfig):
         state_dict = torch.load(config.load_checkpoint, map_location="cuda")
 
         # Resize and reset puzzle emb if needed
-        puzzle_emb_name = "_orig_mod.model.inner.puzzle_emb.weights"
-        expected_shape: torch.Size = model.model.puzzle_emb.weights.shape  # type: ignore
+        puzzle_emb_name = "_orig_mod.inner.puzzle_emb.weights"
+        expected_shape: torch.Size = model.puzzle_emb.weights.shape  # type: ignore
         if puzzle_emb_name in state_dict:
             puzzle_emb = state_dict[puzzle_emb_name]
             if puzzle_emb.shape != expected_shape:
@@ -287,6 +287,20 @@ def create_evaluators(config: PretrainConfig, eval_metadata: PuzzleDatasetMetada
     return evaluators
 
 def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, global_batch_size: int, rank: int, world_size: int):
+    """
+    Train on one batch with N_supervision steps as described in the paper.
+
+    Paper pseudocode:
+        for x_input, y_true in train_dataloader:
+            y, z = y_init, z_init
+            for step in range(N_supervision):
+                (y, z), y_hat, q_hat = deep_recursion(x, y, z)
+                loss.backward()
+                opt.step()
+                opt.zero_grad()
+                if q_hat > 0:  # early-stopping
+                    break
+    """
     train_state.step += 1
     if train_state.step > train_state.total_steps:  # At most train_total_steps
         return
@@ -294,39 +308,55 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
     # To device
     batch = {k: v.cuda() for k, v in batch.items()}
 
-    # Init carry if it is None
-    if train_state.carry is None:
-        with torch.device("cuda"):
-            train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
+    # Initialize carry for this batch (y, z)
+    with torch.device("cuda"):
+        carry = train_state.model.initial_carry(batch)
 
-    # Forward
-    train_state.carry, loss, metrics, _, _ = train_state.model(carry=train_state.carry, batch=batch, return_keys=[])
+    # Supervision loop: refine answer N_supervision times
+    # Note: Gradients accumulate across supervision steps, optimizer step happens once at the end
+    all_metrics = []
+    for sup_step in range(config.N_supervision):
+        # Forward: one supervision step (deep recursion)
+        carry, loss, metrics, _ = train_state.model(carry=carry, batch=batch, return_keys=[])
 
-    ((1 / global_batch_size) * loss).backward()
+        # Backward (accumulate gradients across supervision steps)
+        ((1 / global_batch_size) * loss).backward()
 
-    # Allreduce
+        # Detach carry for next supervision step (as in paper: z = z.detach())
+        carry = type(carry)(y=carry.y.detach(), z=carry.z.detach())
+
+        # Collect metrics
+        all_metrics.append(metrics)
+
+    # Allreduce gradients (once after all supervision steps)
     if world_size > 1:
         for param in train_state.model.parameters():
             if param.grad is not None:
                 dist.all_reduce(param.grad)
-            
-    # Apply optimizer
-    lr_this_step = None    
+
+    # Apply optimizer (once after all supervision steps)
+    lr_this_step = None
     for optim, base_lr in zip(train_state.optimizers, train_state.optimizer_lrs):
         lr_this_step = compute_lr(base_lr, config, train_state)
 
         for param_group in optim.param_groups:
             param_group['lr'] = lr_this_step
-            
+
         optim.step()
         optim.zero_grad()
 
-    # Reduce metrics
-    if len(metrics):
+    # Aggregate metrics from all supervision steps
+    if len(all_metrics) > 0:
+        # Average metrics across supervision steps
+        aggregated_metrics = {}
+        for key in all_metrics[0].keys():
+            aggregated_metrics[key] = sum(m[key] for m in all_metrics) / len(all_metrics)
+
+        metrics = aggregated_metrics
+
         assert not any(v.requires_grad for v in metrics.values())
 
-        metric_keys = list(sorted(metrics.keys()))  # Sort keys to guarantee all processes use the same order.
-        # Reduce and reconstruct
+        metric_keys = list(sorted(metrics.keys()))
         metric_values = torch.stack([metrics[k] for k in metric_keys])
         if world_size > 1:
             dist.reduce(metric_values, dst=0)
@@ -334,26 +364,13 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
         if rank == 0:
             metric_values = metric_values.cpu().numpy()
             reduced_metrics = {k: metric_values[i] for i, k in enumerate(metric_keys)}
-            
+
             # Postprocess
             count = max(reduced_metrics["count"], 1)  # Avoid NaNs
-            
-            # Some metrics should be averaged per batch, not per correct example
-            per_batch_metrics = {
-                "pairwise_cosine_sim",  # Diversity metrics
-                "pairwise_l2_dist",
-                "branch_std",
-                "steps",  # ACT steps (average across all examples, not just correct)
-            }
-            
-            reduced_metrics = {
-                f"train/{k}": v / (
-                    global_batch_size if (k.endswith("loss") or k in per_batch_metrics) else count
-                )
-                for k, v in reduced_metrics.items()
-            }
+            reduced_metrics = {f"train/{k}": v / (global_batch_size if k.endswith("loss") else count) for k, v in reduced_metrics.items()}
 
             reduced_metrics["train/lr"] = lr_this_step
+            reduced_metrics["train/supervision_steps"] = len(all_metrics)
             return reduced_metrics
 
 def evaluate(
@@ -382,29 +399,26 @@ def evaluate(
         metric_keys = []
         metric_values = None
 
-        carry = None
         processed_batches = 0
-        
+
         for set_name, batch, global_batch_size in eval_loader:
             processed_batches += 1
             if rank == 0:
                 print(f"Processing batch {processed_batches}: {set_name}")
-            
+
             # To device
             batch = {k: v.cuda() for k, v in batch.items()}
             with torch.device("cuda"):
-                carry = train_state.model.initial_carry(batch)  # type: ignore
+                carry = train_state.model.initial_carry(batch)
 
-            # Forward
+            # Forward: run supervision steps (same as training)
             inference_steps = 0
-            while True:
-                carry, loss, metrics, preds, all_finish = train_state.model(
+
+            for _ in range(config.N_supervision):
+                carry, loss, metrics, preds = train_state.model(
                     carry=carry, batch=batch, return_keys=return_keys
                 )
                 inference_steps += 1
-
-                if all_finish:
-                    break
 
             if rank == 0:
                 print(f"  Completed inference in {inference_steps} steps")
@@ -418,7 +432,7 @@ def evaluate(
             for evaluator in evaluators:
                 evaluator.update_batch(batch, preds)
 
-            del carry, loss, preds, batch, all_finish
+            del carry, loss, preds, batch
 
             # Aggregate metrics
             set_id = set_ids[set_name]
@@ -546,7 +560,7 @@ def load_synced_config(hydra_config: DictConfig, rank: int, world_size: int) -> 
     return objects[0]  # type: ignore
 
 
-@hydra.main(config_path="config", config_name="cfg_pretrain", version_base=None)
+@hydra.main(config_path="config", config_name="cfg_pretrain2", version_base=None)
 def launch(hydra_config: DictConfig):
     RANK = 0
     WORLD_SIZE = 1
@@ -583,14 +597,14 @@ def launch(hydra_config: DictConfig):
     train_loader, train_metadata = create_dataloader(config, "train", test_set_mode=False, epochs_per_iter=train_epochs_per_iter, global_batch_size=config.global_batch_size, rank=RANK, world_size=WORLD_SIZE)
     try:
         eval_loader,  eval_metadata  = create_dataloader(config, "test", test_set_mode=True, epochs_per_iter=1, global_batch_size=config.global_batch_size, rank=RANK, world_size=WORLD_SIZE)
-    except:
-        print("NO EVAL DATA FOUND")
+    except Exception as e:
+        print(f"NO EVAL DATA FOUND: {e}")
         eval_loader = eval_metadata = None
 
     try:
         evaluators = create_evaluators(config, eval_metadata)
-    except:
-        print("No evaluator found")
+    except Exception as e:
+        print(f"No evaluator found: {e}")
         evaluators = []
 
     # Train state
