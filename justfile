@@ -1,5 +1,6 @@
 # Install dependencies
 install:
+    uv venv --allow-existing
     uv sync
     @echo "\n✓ Dependencies installed successfully!"
 
