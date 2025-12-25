@@ -40,3 +40,5 @@ min_eval_interval: 0 # when to start the eval
 ema: False # use Exponential-Moving-Average
 ema_rate: 0.999 # EMA-rate
 freeze_weights: False # If True, freeze weights and only learn the embeddings
+
+max_train_puzzles: null # Set to an integer to limit training to first N puzzles
