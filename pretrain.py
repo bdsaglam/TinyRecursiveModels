@@ -738,6 +738,7 @@ def launch(hydra_config: DictConfig):
                         labels=batch_out["labels"],
                         preds=preds_out["preds"],
                         max_samples=config.log_predictions_max_samples,
+                        step=train_state.step,
                         table_name="train_predictions",
                         crop=config.log_predictions_crop,
                     )
