@@ -10,6 +10,7 @@ def log_arc_predictions(
     labels: torch.Tensor,
     preds: torch.Tensor,
     max_samples: int,
+    step: int,
     table_name: str = "predictions",
     crop: bool = True,
 ) -> None:
@@ -20,6 +21,7 @@ def log_arc_predictions(
         labels: Label grids tensor (B, seq_len), -100 for ignored positions
         preds: Prediction grids tensor (B, seq_len)
         max_samples: Maximum number of samples to log
+        step: Current training step
         table_name: Name for the W&B table
         crop: If True, crop grids to content. If False, show full 30x30 grid.
     """
@@ -32,7 +34,7 @@ def log_arc_predictions(
 
     num_samples = min(len(inputs_np), max_samples)
 
-    columns = ["idx", "correct", "input", "label", "prediction"]
+    columns = ["step", "idx", "correct", "input", "label", "prediction"]
     table = wandb.Table(columns=columns)
 
     for idx in range(num_samples):
@@ -64,6 +66,7 @@ def log_arc_predictions(
         pred_img = grid_to_image(pred_grid)
 
         table.add_data(
+            step,
             idx,
             is_correct,
             wandb.Image(input_img),
