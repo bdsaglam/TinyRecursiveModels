@@ -561,6 +561,7 @@ def evaluate(
                 labels=torch.cat(eval_pred_samples["labels"], dim=0),
                 preds=torch.cat(eval_pred_samples["preds"], dim=0),
                 max_samples=config.log_predictions_max_samples,
+                step=train_state.step,
                 table_name="eval_predictions",
                 crop=config.log_predictions_crop,
             )

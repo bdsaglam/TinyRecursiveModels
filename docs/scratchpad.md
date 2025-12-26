@@ -46,10 +46,7 @@ eval_interval=100 \
 # Model: models/recursive_reasoning/etrm.py (TRMWithEncoder)
 # Dataset: dataset/fewshot_puzzle_dataset.py (FewShotPuzzleDataset)
 
-torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py \
-arch.L_layers=2 \
-arch.H_cycles=3 arch.L_cycles=4 \
-ema=True \
+torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_paper \
 log_predictions_every=100 \
 epochs=1000 \
 eval_interval=100 \
