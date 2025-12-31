@@ -87,6 +87,10 @@ class PretrainEncoderConfig(pydantic.BaseModel):
     # 1.0 = same as base lr, 0.1 = 10x slower, 0 = disabled (single optimizer)
     encoder_lr_scale: float = 0.0
 
+    # Staged training: freeze encoder for first N steps, then unfreeze
+    # 0 = disabled (train encoder from start)
+    encoder_freeze_steps: int = 0
+
     # NO puzzle_emb_lr - single optimizer for encoder mode
 
     # Names
@@ -212,6 +216,8 @@ def create_model_encoder(
             print(f"Separate LRs: {len(encoder_params)} encoder params, {len(inner_params)} inner params")
             print(f"  Encoder LR: {config.lr * config.encoder_lr_scale:.2e}")
             print(f"  Inner LR: {config.lr:.2e}")
+            if config.encoder_freeze_steps > 0:
+                print(f"  STAGED TRAINING: Encoder frozen for first {config.encoder_freeze_steps} steps")
 
         optimizers = [
             AdamATan2(
@@ -282,12 +288,14 @@ def init_train_state_encoder(
     rank: int,
     world_size: int,
 ):
-    # Estimated total training steps
+    # Estimated total training steps (account for max_train_groups limit)
+    # Note: fewshot dataset iterates over groups (not examples), so no mean_puzzle_examples
+    num_groups = train_metadata.total_groups
+    if config.max_train_groups is not None:
+        num_groups = min(config.max_train_groups, num_groups)
+
     total_steps = int(
-        config.epochs
-        * train_metadata.total_groups
-        * train_metadata.mean_puzzle_examples
-        / config.global_batch_size
+        config.epochs * num_groups / config.global_batch_size
     )
 
     # Model
@@ -388,6 +396,13 @@ def train_batch_encoder(
     if train_state.carry is None:
         with torch.device("cuda"):
             train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
+    else:
+        # IMPORTANT: Force fresh encoding each batch during training.
+        # Without this, the ACT halting logic (initialized to not halt) causes
+        # the encoder to be skipped after the first batch, resulting in zero
+        # encoder gradients. Each training batch contains different puzzles,
+        # so we must re-encode demos for each batch.
+        train_state.carry.halted[:] = True
 
     # Forward
     return_keys = ["preds"] if return_preds else []
@@ -413,15 +428,44 @@ def train_batch_encoder(
                 dist.all_reduce(param.grad)
 
     # Apply optimizer
+    # Staged training: skip encoder optimizer during freeze period
+    in_freeze_period = (
+        config.encoder_freeze_steps > 0
+        and train_state.step <= config.encoder_freeze_steps
+    )
+
+    # Log when encoder unfreezes
+    if (config.encoder_freeze_steps > 0
+        and train_state.step == config.encoder_freeze_steps + 1
+        and rank == 0):
+        print(f"\n{'='*60}")
+        print(f"ENCODER UNFROZEN at step {train_state.step}")
+        print(f"Encoder LR scale: {config.encoder_lr_scale}")
+        print(f"{'='*60}\n")
+
     lr_this_step = None
-    for optim, base_lr in zip(train_state.optimizers, train_state.optimizer_lrs):
-        lr_this_step = compute_lr(base_lr, config, train_state)
+    encoder_lr_this_step = None
+    for optim_idx, (optim, base_lr) in enumerate(zip(train_state.optimizers, train_state.optimizer_lrs)):
+        # Skip encoder optimizer (index 1) during freeze period
+        is_encoder_optim = (optim_idx == 1 and len(train_state.optimizers) > 1)
+        if is_encoder_optim and in_freeze_period:
+            # Zero grads but don't step - encoder stays frozen
+            optim.zero_grad()
+            encoder_lr_this_step = 0.0
+            continue
+
+        lr = compute_lr(base_lr, config, train_state)
 
         for param_group in optim.param_groups:
-            param_group["lr"] = lr_this_step
+            param_group["lr"] = lr
 
         optim.step()
         optim.zero_grad()
+
+        if is_encoder_optim:
+            encoder_lr_this_step = lr
+        else:
+            lr_this_step = lr
 
     # Separate encoder diagnostics (scalars) from tensor metrics
     encoder_diagnostics = {}
@@ -452,6 +496,9 @@ def train_batch_encoder(
             }
 
             reduced_metrics["train/lr"] = lr_this_step
+            if encoder_lr_this_step is not None:
+                reduced_metrics["train/encoder_lr"] = encoder_lr_this_step
+                reduced_metrics["train/encoder_frozen"] = 1.0 if encoder_lr_this_step == 0 else 0.0
 
             # Add encoder diagnostics (already scalars, no reduction needed)
             for k, v in encoder_diagnostics.items():

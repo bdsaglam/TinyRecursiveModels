@@ -6,6 +6,47 @@
 
 ---
 
+## Key Finding: Gradient Flow Bug Fixed, Encoder Now Trains
+
+**Date**: 2024-12-31
+
+### Bug Discovery and Fix
+
+**Root cause**: ACT halting logic caused encoder to be skipped after first batch.
+
+The bug chain:
+1. `q_head.bias = -5` → `q_halt_logits ≈ -5` → `q_halt_logits > 0` = False
+2. After first batch, `halted = all False` (nothing halted yet)
+3. Second batch: `needs_reset = carry.halted = all False`
+4. Code goes to `else: context = carry.cached_context` (DETACHED!)
+5. Encoder is never called after first batch → zero gradients
+
+**Fix**: In `pretrain_encoder.py`, force `halted=True` at start of each training batch:
+```python
+else:
+    # Force fresh encoding each batch during training
+    train_state.carry.halted[:] = True
+```
+
+### Results Summary (Bug Fix Validation)
+
+| Experiment | Status | Train Exact Acc | Encoder Grad Norm | Observation |
+|------------|--------|-----------------|-------------------|-------------|
+| E0v2 baseline | ✅ | **95.8%** | N/A | Puzzle embeddings (control) |
+| E_diag1 frozen | ✅ | **57.8%** | 0 (frozen) | Proves interface works |
+| E_fix_v1 | ✅ | **85.4%** | 0.046 | Encoder gradients flow! |
+| E_fix_gradclip | ✅ | **96.7%** | 0.082 | Best - matches baseline |
+| E_fix_lpn_var | 🔄 | 66.7% | 1.19 | Still running |
+
+### Key Insights
+
+1. **Gradient clipping is essential**: 96.7% vs 85.4% without clipping
+2. **Encoder can match baseline**: 96.7% close to 95.8% puzzle embedding baseline
+3. **LPN variational slower to converge**: May need more time or different hyperparams
+4. **grad_clip_norm=1.0 is now the default** in config
+
+---
+
 ## Experiment Summary
 
 | ID | Name | Tests | Key Variable |
@@ -300,12 +341,12 @@ Start: Run E0v2, E1v2, E_diag1 in parallel
            ▼
       E0v2 succeeds?
       ┌────┴────┐
-      No        Yes
+      No        Yes ✅
       │         │
       ▼         ▼
    DEBUG     E1v2 succeeds?
    BASELINE  ┌────┴────┐
-             No        Yes
+             No ✅     Yes
              │         │
              ▼         ▼
         E_diag1 succeeds?    SUCCESS! → Phase 4
@@ -499,3 +540,42 @@ torchrun ... arch.encoder_pooling_method=attention +run_name="E7_attention_pooli
 | Is representation correct? | Medium | E_diag1 tests interface |
 
 **Overall**: Current experiments cover the main hypothesis space. E_diag1 diagnoses encoder-TRM interface, E7 isolates pooling method impact. If all fail, add gradient logging for deeper investigation.
+
+---
+
+## Phase 6: Generalization Experiments
+
+**Project**: mmi-714-gen
+
+**Date**: 2024-12-31
+
+### Goal
+
+Achieve non-zero pass@K on test set (true generalization to unseen puzzles).
+
+### Strategy
+
+- Train on full dataset (~560 training puzzles)
+- Evaluate on held-out test set (~400 evaluation puzzles)
+- Use grad_clip_norm=1.0 (now default, proven essential)
+
+### Experiments
+
+| ID | Encoder Type | Purpose |
+|----|--------------|---------|
+| G1 | standard | Baseline - our simple 2-layer encoder |
+| G2 | lpn_variational | VAE regularization may help generalization |
+| G3 | lpn_standard | Deeper encoder (4 layers) without VAE overhead |
+
+### Expected Outcomes
+
+**Optimistic**: Some pass@K > 0 on test set, showing encoder can generalize
+**Realistic**: Good train accuracy, but test accuracy near 0 (memorization, no generalization)
+**Pessimistic**: Training doesn't converge at full scale
+
+### What Success Looks Like
+
+- **Great**: pass@2 > 5% (comparable to early-stage LPN paper results)
+- **Good**: pass@100 > 0% (some generalization signal)
+- **Partial**: High train accuracy but 0 test (need regularization/architecture changes)
+- **Fail**: Training doesn't converge at full scale

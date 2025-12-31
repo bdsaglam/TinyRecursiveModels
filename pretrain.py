@@ -247,9 +247,13 @@ def init_train_state(
     rank: int,
     world_size: int,
 ):
-    # Estimated total training steps
+    # Estimated total training steps (account for max_train_groups limit)
+    num_groups = train_metadata.total_groups
+    if config.max_train_groups is not None:
+        num_groups = min(config.max_train_groups, num_groups)
+
     total_steps = int(
-        config.epochs * train_metadata.total_groups * train_metadata.mean_puzzle_examples / config.global_batch_size
+        config.epochs * num_groups * train_metadata.mean_puzzle_examples / config.global_batch_size
     )
 
     # Model

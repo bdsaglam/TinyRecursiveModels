@@ -102,7 +102,7 @@ def log_arc_predictions(
 
         table.add_data(*row_data)
 
-    wandb.log({table_name: table})
+    wandb.log({table_name: table}, step=step)
 
 
 def _create_demos_image(

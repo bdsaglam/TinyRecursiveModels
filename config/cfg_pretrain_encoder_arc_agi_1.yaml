@@ -45,7 +45,8 @@ beta2: 0.95
 weight_decay: 0.1
 
 # Gradient clipping (0 = disabled)
-grad_clip_norm: 0.0
+# Note: 1.0 significantly improves training stability (96.7% vs 85.4% on overfit test)
+grad_clip_norm: 1.0
 
 # Separate encoder learning rate (multiplier)
 # 0 = disabled (single optimizer), 0.1 = encoder 10x slower

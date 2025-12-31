@@ -1,45 +1,37 @@
 # ============================================================================
-# PHASE 1: OVERFIT VERIFICATION (must pass before anything else)
-# Goal: Prove both baseline and encoder can memorize 32 puzzles
+# BUG FIX VALIDATION (completed)
+# Root cause: ACT halting logic caused encoder to be skipped after first batch
+# Fix: Force halted=True at start of each batch to ensure fresh encoding
+# Result: grad_clip_norm=1.0 achieves 96.7% train exact acc (best)
 # ============================================================================
 
-# E0v2: Baseline TRM (puzzle embeddings) - extended training
-# Expected: Should reach 90%+ accuracy if model works
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain.py --config-name cfg_pretrain_arc_agi_1 epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E0v2_baseline_overfit_long"
+# E_fix_v1: Validate the gradient flow fix
+# Result: 85.4% train exact accuracy, encoder_grad_norm > 0 ✓
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 grad_clip_norm=0.0 epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E_fix_v1"
 
-# E1v2: Standard encoder - extended training (same settings as E0v2 for fair comparison)
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E1v2_encoder_overfit_long"
+# E_fix_gradclip: Same + gradient clipping (proven best for overfit)
+# Result: 96.7% train exact accuracy ✓
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E_fix_gradclip"
 
-# E_diag1: Frozen encoder diagnostic - can TRM learn with random fixed encoder?
-# If YES: encoder output format is correct, training signal is the issue
-# If NO: encoder-TRM interface or representation format is broken
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 arch.freeze_encoder=true epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E_diag1_frozen_encoder"
-
-# ============================================================================
-# PHASE 2: ENCODER ARCHITECTURE COMPARISON
-# Goal: Find the best encoder architecture
-# Run these after Phase 1 shows encoder can learn
-# ============================================================================
-
-# E2_lpn: LPN-style encoder (deeper, CLS token, mean aggregation)
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 arch.encoder_type=lpn_standard epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E2_lpn_standard_overfit"
-
-# E3_lpn_var: LPN Variational encoder (per-demo VAE)
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 arch.encoder_type=lpn_variational epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E3_lpn_variational_overfit"
+# E_fix_lpn_var: LPN Variational encoder (without grad clip - running)
+# Result: 66.7% at last check (still running)
+[-] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 grad_clip_norm=0.0 arch.encoder_type=lpn_variational epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E_fix_lpn_var" [1371322]
 
 # ============================================================================
-# PHASE 3: HYPERPARAMETER TUNING
-# Goal: Improve training stability and convergence
+# GENERALIZATION EXPERIMENTS
+# Goal: Achieve non-zero pass@K on test set (true generalization)
+# Strategy: Train on full dataset (~560 puzzles), eval on held-out (~400 puzzles)
+# Default: grad_clip_norm=1.0 (now in config)
 # ============================================================================
 
-# E4_lower_lr: Standard encoder with lower learning rate
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 lr=3e-5 epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E4_encoder_lr3e5"
+# G2: LPN Variational encoder - full training
+# VAE regularization may help generalization (even if hurts memorization)
+[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 arch.encoder_type=lpn_variational epochs=100000 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-gen" +run_name="G2_lpn_var_full"
 
-# E5_grad_clip: Standard encoder with gradient clipping
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 grad_clip_norm=1.0 epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E5_encoder_gradclip1"
+# G3: LPN Standard encoder - full training
+# Deeper encoder (4 layers) without VAE overhead
+[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 arch.encoder_type=lpn_standard epochs=100000 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-gen" +run_name="G3_lpn_std_full"
 
-# E7_attention: Attention pooling only (isolate this variable from E6)
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 arch.encoder_pooling_method=attention epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E7_attention_pooling"
-
-# E6_combined: Lower LR + grad clip + attention pooling
-[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 lr=3e-5 grad_clip_norm=1.0 arch.encoder_pooling_method=attention epochs=100000 max_train_groups=32 max_eval_groups=32 global_batch_size=256 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-debug" +run_name="E6_encoder_combined"
+# G1: Standard encoder - full training baseline
+# Tests if our simple 2-layer encoder can generalize
+[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 epochs=100000 eval_interval=10000 log_predictions_every=5000 +project_name="mmi-714-gen" +run_name="G1_standard_full"

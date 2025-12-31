@@ -34,6 +34,8 @@ from models.layers import (
     CastedLinear,
 )
 from models.encoders import StandardDemoEncoder, DemoEncoderConfig
+from models.encoders.lpn_standard import LPNStandardEncoder
+from models.encoders.lpn_variational import LPNVariationalEncoder
 
 
 IGNORE_LABEL_ID = -100
@@ -63,6 +65,7 @@ class TRMEncoderConfig(BaseModel):
     vocab_size: int
 
     # Encoder settings
+    encoder_type: str = "standard"  # "standard", "lpn_standard", "lpn_variational"
     encoder_num_layers: int = 2
 
     # === Encoder architecture improvements ===
@@ -341,7 +344,7 @@ class TRMWithEncoder(nn.Module):
         super().__init__()
         self.config = TRMEncoderConfig(**config_dict)
 
-        # Create encoder
+        # Create encoder based on encoder_type
         encoder_config = DemoEncoderConfig(
             hidden_size=self.config.hidden_size,
             num_heads=self.config.num_heads,
@@ -359,7 +362,15 @@ class TRMWithEncoder(nn.Module):
             norm_style=self.config.encoder_norm_style,
             qk_norm=self.config.encoder_qk_norm,
         )
-        self.encoder = StandardDemoEncoder(encoder_config)
+
+        if self.config.encoder_type == "standard":
+            self.encoder = StandardDemoEncoder(encoder_config)
+        elif self.config.encoder_type == "lpn_standard":
+            self.encoder = LPNStandardEncoder(encoder_config)
+        elif self.config.encoder_type == "lpn_variational":
+            self.encoder = LPNVariationalEncoder(encoder_config)
+        else:
+            raise ValueError(f"Unknown encoder_type: {self.config.encoder_type}")
 
         # Freeze encoder if requested (for diagnostic experiments)
         if self.config.freeze_encoder:

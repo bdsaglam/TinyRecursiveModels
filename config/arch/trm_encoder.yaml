@@ -5,6 +5,7 @@ loss:
   loss_type: stablemax_cross_entropy
 
 # Encoder settings
+encoder_type: standard         # "standard", "lpn_standard", "lpn_variational"
 encoder_num_layers: 2          # Depth of grid encoder (per-demo transformer)
 encoder_pooling_method: mean   # "mean", "attention", or "weighted"
 encoder_set_layers: 1          # Depth of set encoder (cross-attention layers)
