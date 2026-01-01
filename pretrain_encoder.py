@@ -384,7 +384,17 @@ def train_batch_encoder(
     world_size: int,
     return_preds: bool = False,
 ):
-    """Training batch step for encoder mode."""
+    """
+    Training batch step for encoder mode with online learning.
+
+    True online learning: for each ACT step, we do:
+    1. Forward (encode demos fresh + inner model step)
+    2. Backward
+    3. Optimizer step
+
+    This matches the original paper's training dynamics where each
+    ACT step benefits from weight updates made by earlier steps.
+    """
     train_state.step += 1
     if train_state.step > train_state.total_steps:
         return None, None, None
@@ -392,43 +402,10 @@ def train_batch_encoder(
     # To device
     batch = {k: v.cuda() for k, v in batch.items()}
 
-    # Init carry if None
-    if train_state.carry is None:
-        with torch.device("cuda"):
-            train_state.carry = train_state.model.initial_carry(batch)  # type: ignore
-    else:
-        # IMPORTANT: Force fresh encoding each batch during training.
-        # Without this, the ACT halting logic (initialized to not halt) causes
-        # the encoder to be skipped after the first batch, resulting in zero
-        # encoder gradients. Each training batch contains different puzzles,
-        # so we must re-encode demos for each batch.
-        train_state.carry.halted[:] = True
+    # Get number of ACT steps from config
+    num_act_steps = config.arch.num_act_steps
 
-    # Forward
-    return_keys = ["preds"] if return_preds else []
-    train_state.carry, loss, metrics, preds, _ = train_state.model(
-        carry=train_state.carry, batch=batch, return_keys=return_keys
-    )
-
-    ((1 / global_batch_size) * loss).backward()
-
-    # Gradient clipping (before allreduce for consistency)
-    if config.grad_clip_norm > 0:
-        torch.nn.utils.clip_grad_norm_(train_state.model.parameters(), max_norm=config.grad_clip_norm)
-
-    # Compute gradient norms BEFORE allreduce (per-rank grads)
-    grad_norms = {}
-    if rank == 0:
-        grad_norms = compute_gradient_norms(train_state.model)
-
-    # Allreduce
-    if world_size > 1:
-        for param in train_state.model.parameters():
-            if param.grad is not None:
-                dist.all_reduce(param.grad)
-
-    # Apply optimizer
-    # Staged training: skip encoder optimizer during freeze period
+    # Staged training: check freeze period
     in_freeze_period = (
         config.encoder_freeze_steps > 0
         and train_state.step <= config.encoder_freeze_steps
@@ -443,29 +420,69 @@ def train_batch_encoder(
         print(f"Encoder LR scale: {config.encoder_lr_scale}")
         print(f"{'='*60}\n")
 
+    # Online learning: forward + backward + optim.step() per ACT step
+    carry = None  # Fresh start each batch
+    final_metrics = None
+    final_preds = None
+    grad_norms = {}
     lr_this_step = None
     encoder_lr_this_step = None
-    for optim_idx, (optim, base_lr) in enumerate(zip(train_state.optimizers, train_state.optimizer_lrs)):
-        # Skip encoder optimizer (index 1) during freeze period
-        is_encoder_optim = (optim_idx == 1 and len(train_state.optimizers) > 1)
-        if is_encoder_optim and in_freeze_period:
-            # Zero grads but don't step - encoder stays frozen
+
+    for act_step in range(num_act_steps):
+        # Forward (encode demos fresh + one inner model step)
+        return_keys = ["preds"] if (return_preds and act_step == num_act_steps - 1) else []
+        carry, loss, metrics, preds, _ = train_state.model(
+            carry=carry, batch=batch, return_keys=return_keys
+        )
+
+        # Scale loss for gradient accumulation consistency
+        ((1 / global_batch_size) * loss).backward()
+
+        # Gradient clipping (before allreduce for consistency)
+        if config.grad_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(train_state.model.parameters(), max_norm=config.grad_clip_norm)
+
+        # Compute gradient norms (only on final step for logging)
+        if rank == 0 and act_step == num_act_steps - 1:
+            grad_norms = compute_gradient_norms(train_state.model)
+
+        # Allreduce
+        if world_size > 1:
+            for param in train_state.model.parameters():
+                if param.grad is not None:
+                    dist.all_reduce(param.grad)
+
+        # Apply optimizer
+        for optim_idx, (optim, base_lr) in enumerate(zip(train_state.optimizers, train_state.optimizer_lrs)):
+            is_encoder_optim = (optim_idx == 1 and len(train_state.optimizers) > 1)
+
+            # Skip encoder optimizer during freeze period
+            if is_encoder_optim and in_freeze_period:
+                optim.zero_grad()
+                encoder_lr_this_step = 0.0
+                continue
+
+            lr = compute_lr(base_lr, config, train_state)
+
+            for param_group in optim.param_groups:
+                param_group["lr"] = lr
+
+            optim.step()
             optim.zero_grad()
-            encoder_lr_this_step = 0.0
-            continue
 
-        lr = compute_lr(base_lr, config, train_state)
+            if is_encoder_optim:
+                encoder_lr_this_step = lr
+            else:
+                lr_this_step = lr
 
-        for param_group in optim.param_groups:
-            param_group["lr"] = lr
+        # Keep metrics/preds from final step for logging
+        if act_step == num_act_steps - 1:
+            final_metrics = metrics
+            final_preds = preds
 
-        optim.step()
-        optim.zero_grad()
-
-        if is_encoder_optim:
-            encoder_lr_this_step = lr
-        else:
-            lr_this_step = lr
+    # Use final step's metrics for logging
+    metrics = final_metrics
+    preds = final_preds
 
     # Separate encoder diagnostics (scalars) from tensor metrics
     encoder_diagnostics = {}
@@ -496,6 +513,7 @@ def train_batch_encoder(
             }
 
             reduced_metrics["train/lr"] = lr_this_step
+            reduced_metrics["train/num_act_steps"] = num_act_steps
             if encoder_lr_this_step is not None:
                 reduced_metrics["train/encoder_lr"] = encoder_lr_this_step
                 reduced_metrics["train/encoder_frozen"] = 1.0 if encoder_lr_this_step == 0 else 0.0

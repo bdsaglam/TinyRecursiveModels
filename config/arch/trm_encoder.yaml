@@ -14,9 +14,12 @@ encoder_norm_style: post       # "pre" or "post" normalization
 encoder_qk_norm: False         # QK normalization in attention
 freeze_encoder: False          # Freeze encoder weights (for diagnostic experiments)
 
-# Halting settings
-halt_exploration_prob: 0.1
-halt_max_steps: 16
+# ACT settings
+# Training uses fixed ACT steps (simpler, ensures encoder gradients)
+# Evaluation uses adaptive halting with halt_max_steps
+num_act_steps: 8             # Fixed ACT steps for training (1, 4, 8, 16)
+halt_exploration_prob: 0.1   # Only used during eval
+halt_max_steps: 16           # Max steps during eval
 
 # TRM reasoning cycles
 H_cycles: 3

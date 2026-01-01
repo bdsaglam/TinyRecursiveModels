@@ -579,3 +579,67 @@ Achieve non-zero pass@K on test set (true generalization to unseen puzzles).
 - **Good**: pass@100 > 0% (some generalization signal)
 - **Partial**: High train accuracy but 0 test (need regularization/architecture changes)
 - **Fail**: Training doesn't converge at full scale
+
+---
+
+## Phase 7: Fixed ACT Steps Implementation
+
+**Project**: mmi-714-act
+
+**Date**: 2024-12-31
+
+### Background
+
+The original TRM uses Adaptive Computation Time (ACT) where samples can take up to 16 "outer loop" iterations across batches. Analysis from the [HRM paper](https://arcprize.org/blog/hrm-analysis) shows this is critical for performance.
+
+However, encoder mode had issues with ACT:
+1. The carry/replace mechanism didn't work well with computed (vs learned) context
+2. Encoder only got gradients when samples reset (~6% of batch in steady state)
+3. Previous fix (force all resets) worked but limited to 1 ACT step per sample
+
+### New Implementation: Fixed ACT Steps
+
+Simplified approach for encoder mode:
+- **Training**: Fixed `num_act_steps` per batch (configurable: 1, 4, 8, 16)
+- **Each batch is independent**: No carry across batches
+- **Encoder called once per batch**: Context shared across all ACT steps
+- **Loss averaged across steps**: Each step contributes gradients to encoder
+- **Eval unchanged**: Still uses adaptive halting with `halt_max_steps`
+
+```python
+# Training forward (simplified)
+context = encoder(demos)  # Once per batch
+for step in range(num_act_steps):
+    logits = inner_model(context)  # Fixed steps
+    loss += compute_loss(logits)
+```
+
+### Why This Works
+
+1. **Encoder gradients**: Context is used in every step, so encoder gets full gradients
+2. **Multi-step training**: Model learns to produce good outputs at each refinement step
+3. **Simpler code**: No complex carry/replace logic during training
+4. **Matches eval**: Can set `num_act_steps` to match `halt_max_steps`
+
+### ACT Steps Ablation
+
+| ID | num_act_steps | Purpose |
+|----|---------------|---------|
+| A1 | 1 | Baseline (same as previous fix) |
+| A4 | 4 | Moderate refinement |
+| A8 | 8 | More refinement |
+| A16 | 16 | Max refinement (matches eval) |
+
+### Expected Findings
+
+Based on HRM analysis:
+- More ACT steps during training should improve performance
+- Even with 1 step at inference, training with more steps helps
+- Diminishing returns after some point (likely 8-16)
+
+### Config Changes
+
+```yaml
+# config/arch/trm_encoder.yaml
+num_act_steps: 1  # Fixed ACT steps for training (1, 4, 8, 16)
+```

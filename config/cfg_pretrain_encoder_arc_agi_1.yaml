@@ -23,7 +23,7 @@ evaluators:
   - name: arc@ARC
 
 # Prediction visualization logging
-log_predictions_every: 1000
+log_predictions_every: 5000
 log_predictions_max_samples: 32  # Max samples per log
 log_predictions_crop: True  # If true, crop to content; if false, show full 30x30
 

@@ -95,9 +95,10 @@ class TRMEncoderConfig(BaseModel):
     rms_norm_eps: float = 1e-5
     rope_theta: float = 10000.0
 
-    # Halting Q-learning config
-    halt_max_steps: int
-    halt_exploration_prob: float
+    # ACT config
+    num_act_steps: int = 1  # Fixed ACT steps for training (1, 4, 8, 16)
+    halt_max_steps: int     # Max steps during eval (adaptive halting)
+    halt_exploration_prob: float  # Only used during eval
 
     forward_dtype: str = "bfloat16"
 
@@ -399,13 +400,114 @@ class TRMWithEncoder(nn.Module):
         )
 
     def forward(
-        self, carry: TRMEncoderCarry, batch: Dict[str, torch.Tensor]
-    ) -> Tuple[TRMEncoderCarry, Dict[str, torch.Tensor]]:
+        self, carry: Optional[TRMEncoderCarry], batch: Dict[str, torch.Tensor]
+    ) -> Tuple[Optional[TRMEncoderCarry], Dict[str, torch.Tensor]]:
         """
         Forward pass with demo encoding.
 
-        For halted sequences: compute new context from demos.
-        For continuing sequences: use cached context.
+        Training mode (online learning):
+            - Each forward call = ONE ACT step
+            - Encodes demos fresh each time (true online learning)
+            - Training loop calls this num_act_steps times with backward+optim each
+
+        Eval mode (adaptive halting):
+            - Uses carry to continue iterations
+            - Halts when Q-head signals or max steps reached
+        """
+        if self.training:
+            return self._forward_train_step(carry, batch)
+        else:
+            assert carry is not None, "Carry required for eval mode"
+            return self._forward_eval_step(carry, batch)
+
+    def _forward_train_step(
+        self, carry: Optional[TRMEncoderCarry], batch: Dict[str, torch.Tensor]
+    ) -> Tuple[TRMEncoderCarry, Dict[str, torch.Tensor]]:
+        """
+        Training forward - ONE ACT step with fresh encoding.
+
+        True online learning: encoder and inner model both get
+        updated after each ACT step, matching the original paper's
+        training dynamics where each ACT step = backward + optim.step().
+
+        Args:
+            carry: None for first step, or carry from previous step
+            batch: Current batch data
+
+        Returns:
+            new_carry: Carry state for next step (inner_carry only, no cached context)
+            outputs: Single-step outputs (logits, q_halt_logits, etc.)
+        """
+        batch_size = batch["inputs"].shape[0]
+        device = batch["inputs"].device
+
+        # 1. Encode demos fresh (for true online learning)
+        # This ensures encoder gets gradients at every ACT step
+        context = self.encoder(
+            batch["demo_inputs"],
+            batch["demo_labels"],
+            batch["demo_mask"],
+        )
+
+        # Compute encoder diagnostics
+        encoder_diagnostics = {}
+        with torch.no_grad():
+            encoder_diagnostics["encoder_output_mean"] = context.mean().item()
+            encoder_diagnostics["encoder_output_std"] = context.std().item()
+            encoder_diagnostics["encoder_output_norm"] = context.norm(dim=-1).mean().item()
+            batch_mean = context.mean(dim=0, keepdim=True)
+            cross_sample_var = ((context - batch_mean) ** 2).mean()
+            encoder_diagnostics["encoder_cross_sample_var"] = cross_sample_var.item()
+            encoder_diagnostics["encoder_token_std"] = context.std(dim=0).mean().item()
+
+        # 2. Initialize or continue inner carry
+        if carry is None:
+            # First step: fresh initialization
+            inner_carry = self.inner.empty_carry(batch_size, device=device)
+            inner_carry = self.inner.reset_carry(
+                torch.ones(batch_size, dtype=torch.bool, device=device),
+                inner_carry,
+            )
+            steps = torch.ones(batch_size, dtype=torch.long, device=device)
+        else:
+            # Continuing from previous step
+            inner_carry = carry.inner_carry
+            steps = carry.steps + 1
+
+        # 3. Forward inner model with context
+        inner_carry, logits, (q_halt_logits, q_continue_logits) = self.inner(
+            inner_carry, batch, context
+        )
+
+        # 4. Build outputs (single step, not stacked)
+        outputs = {
+            "logits": logits,
+            "q_halt_logits": q_halt_logits,
+            "q_continue_logits": q_continue_logits,
+            "steps": steps,  # Current step number for metrics
+            **encoder_diagnostics,
+        }
+
+        # 5. Create carry for next step
+        # Note: No cached_context - we re-encode each step for online learning
+        new_carry = TRMEncoderCarry(
+            inner_carry=inner_carry,
+            steps=steps,
+            halted=torch.zeros(batch_size, dtype=torch.bool, device=device),  # Not used in training
+            current_data=batch,
+            cached_context=None,  # Don't cache - re-encode each step
+        )
+
+        return new_carry, outputs
+
+    def _forward_eval_step(
+        self, carry: TRMEncoderCarry, batch: Dict[str, torch.Tensor]
+    ) -> Tuple[TRMEncoderCarry, Dict[str, torch.Tensor]]:
+        """
+        Eval forward with adaptive halting (original logic).
+
+        Uses carry to continue iterations across forward calls.
+        Halts when Q-head signals or max steps reached.
         """
         # Determine which samples need reset (were halted)
         needs_reset = carry.halted
@@ -438,12 +540,9 @@ class TRMWithEncoder(nn.Module):
                 encoder_diagnostics["encoder_output_mean"] = new_context.mean().item()
                 encoder_diagnostics["encoder_output_std"] = new_context.std().item()
                 encoder_diagnostics["encoder_output_norm"] = new_context.norm(dim=-1).mean().item()
-                # Cross-sample variance: how different are encodings across batch items?
-                # If this goes to 0, encoder is collapsing
-                batch_mean = new_context.mean(dim=0, keepdim=True)  # (1, T, D)
+                batch_mean = new_context.mean(dim=0, keepdim=True)
                 cross_sample_var = ((new_context - batch_mean) ** 2).mean()
                 encoder_diagnostics["encoder_cross_sample_var"] = cross_sample_var.item()
-                # Per-token variance across batch
                 encoder_diagnostics["encoder_token_std"] = new_context.std(dim=0).mean().item()
 
             # For continuing samples, use cached context
@@ -471,7 +570,7 @@ class TRMWithEncoder(nn.Module):
             "logits": logits,
             "q_halt_logits": q_halt_logits,
             "q_continue_logits": q_continue_logits,
-            **encoder_diagnostics,  # Include encoder diagnostics
+            **encoder_diagnostics,
         }
 
         with torch.no_grad():
@@ -479,35 +578,8 @@ class TRMWithEncoder(nn.Module):
             new_steps = new_steps + 1
             is_last_step = new_steps >= self.config.halt_max_steps
 
+            # During eval, always run to max steps (for batch consistency)
             halted = is_last_step
-
-            # If training and ACT is enabled
-            if self.training and (self.config.halt_max_steps > 1):
-                # Halt signal
-                if self.config.no_ACT_continue:
-                    halted = halted | (q_halt_logits > 0)
-                else:
-                    halted = halted | (q_halt_logits > q_continue_logits)
-
-                # Exploration
-                min_halt_steps = (
-                    (torch.rand_like(q_halt_logits) < self.config.halt_exploration_prob)
-                    * torch.randint_like(new_steps, low=2, high=self.config.halt_max_steps + 1)
-                )
-                halted = halted & (new_steps >= min_halt_steps)
-
-                if not self.config.no_ACT_continue:
-                    # Compute target Q for continue
-                    _, _, (next_q_halt_logits, next_q_continue_logits) = self.inner(
-                        new_inner_carry, new_current_data, context
-                    )
-                    outputs["target_q_continue"] = torch.sigmoid(
-                        torch.where(
-                            is_last_step,
-                            next_q_halt_logits,
-                            torch.maximum(next_q_halt_logits, next_q_continue_logits),
-                        )
-                    )
 
         new_carry = TRMEncoderCarry(
             inner_carry=new_inner_carry,
