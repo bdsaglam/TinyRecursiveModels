@@ -1,0 +1,55 @@
+# Encoder-based TRM architecture config - ORIGINAL TRAINING MODE
+#
+# Uses etrm_original.py which implements ORIGINAL TRM training dynamics:
+# - ONE forward per batch (carry persists across batches)
+# - Dynamic halting with Q-head exploration during training
+# - Encoder called once when sample starts (cached in carry)
+#
+# This matches the original TRM paper's training approach.
+name: recursive_reasoning.etrm_original@TRMWithEncoder
+loss:
+  name: losses@ACTLossHead
+  loss_type: stablemax_cross_entropy
+
+# Encoder settings
+encoder_type: standard         # "standard", "lpn_standard", "lpn_variational"
+encoder_num_layers: 2          # Depth of grid encoder (per-demo transformer)
+encoder_pooling_method: mean   # "mean", "attention", or "weighted"
+encoder_set_layers: 1          # Depth of set encoder (cross-attention layers)
+encoder_layer_scale_init: 0.0  # CaiT layer scale (0 = disabled, try 1e-4)
+encoder_norm_style: post       # "pre" or "post" normalization
+encoder_qk_norm: False         # QK normalization in attention
+freeze_encoder: False          # Freeze encoder weights (for diagnostic experiments)
+
+# ACT settings - ORIGINAL TRAINING MODE
+# Training uses dynamic halting with exploration (like original TRM)
+# Q-head learns to predict correctness through exploration
+num_act_steps: 1             # Ignored in original mode (always 1 forward per batch)
+halt_exploration_prob: 0.5   # Exploration probability during training
+halt_max_steps: 16           # Max steps before forced halt
+
+# TRM reasoning cycles
+H_cycles: 3
+L_cycles: 6
+
+H_layers: 0
+L_layers: 2
+
+# Transformer config
+hidden_size: 512
+num_heads: 8
+expansion: 4
+
+# Context length (encoder output tokens)
+puzzle_emb_len: 16
+
+# Position encodings
+pos_encodings: rope
+forward_dtype: bfloat16
+
+# Optional settings
+mlp_t: False
+no_ACT_continue: True
+
+# Compatibility (not used in encoder mode)
+puzzle_emb_ndim: 0

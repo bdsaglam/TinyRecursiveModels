@@ -185,6 +185,48 @@ where:
    - lr=1e-2 (higher than main)
    - Only updates used embedding dimensions
 
+### ACT Gradient Flow (Truncated BPTT)
+
+A critical detail: **the carry state is detached between batches** (trm.py:219):
+```python
+new_carry = TRMCarry(z_H=z_H.detach(), z_L=z_L.detach())
+```
+
+This means gradients don't flow across batches. The training uses truncated backpropagation through time:
+
+```
+Sample taking 3 ACT steps (spans 3 batches):
+
+Batch 1:  carry_0 ──[forward]──→ z_H, z_L ──→ logits_1 ──→ loss_1
+          (detached)                ↓                        ↓
+                                backward ←────────────────────┘
+                                    ↓                 (gradients are LOCAL)
+                            carry_1 = z.detach()
+
+Batch 2:  carry_1 ──[forward]──→ z_H, z_L ──→ logits_2 ──→ loss_2
+          (no grad)                 ↓                        ↓
+                                backward ←────────────────────┘
+                                    ↓                 (gradients are LOCAL)
+                            carry_2 = z.detach()
+
+Batch 3:  carry_2 ──[forward]──→ z_H, z_L ──→ logits_3 ──→ loss_3 [HALT]
+          (no grad)                 ↓
+                                backward ←────────────────────┘
+                                                      (gradients are LOCAL)
+```
+
+**Why this works:**
+1. **Early ACT steps**: Predictions are poor → high loss → model learns to refine
+2. **Later ACT steps**: Model sees refined states → better predictions → lower loss
+3. **Halting**: Q-head learns to predict when sequence is correct
+
+The model benefits from seeing cumulative refinement (via carry), even though gradients only flow within each batch. This is similar to how RNNs are trained with truncated BPTT.
+
+**Key implication for encoder mode:**
+- In "online learning" mode: each ACT step = one forward + backward + optim.step()
+- In "original" mode: carry persists across batches, encoder is called once per sample start
+- Both approaches train Q-head, but have different gradient dynamics
+
 ---
 
 ## 6. Dataset Structure

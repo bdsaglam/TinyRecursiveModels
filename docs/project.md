@@ -153,45 +153,86 @@ During training: encoder only sees training puzzles' demos
 During eval: encoder must generalize to unseen puzzles' demos
 ```
 
-### The ACT Bug We Fixed
+### Two Training Modes
 
-**Original Problem**: ACT carry mechanism caused encoder to be skipped after first batch.
+We implemented **two training modes** to explore different training dynamics:
 
-The original flow:
-```
-Batch 1: samples A, B, C, D (all step 1) → loss → backward → optim.step()
-         A halts, gets replaced with E
-Batch 2: samples E, B, C, D (E at step 1, others at step 2+) → ...
-```
+#### Mode 1: Online Learning (`pretrain_encoder.py`)
 
-With encoder mode, samples at step 2+ had **cached context** (no encoder gradients).
-This meant encoder only got gradients from ~6% of samples (those being reset).
-
-**Our Solution: True Online Learning**
+Multiple forward→backward→optim.step() per batch:
 
 ```python
+carry = None  # Reset each batch
 for act_step in range(num_act_steps):
-    # Encode demos FRESH each step (not cached)
+    # Encode demos FRESH each step
     context = encoder(demos)
-
-    # Forward through inner model
     carry, logits, q_halt = inner_model(carry, context)
 
-    # Backward + optimizer step (like original paper)
+    # Backward + optimizer step
     loss.backward()
     optim.step()
     optim.zero_grad()
 ```
 
-This matches the original paper's training dynamics:
-- Each ACT step gets its own gradient update
+**Characteristics**:
+- Encoder re-encodes demos at every ACT step
 - Later ACT steps benefit from earlier weight updates
-- Encoder re-encodes demos fresh each step (true online learning)
+- Fixed number of ACT steps per batch
+- Carry reset each batch
+
+#### Mode 2: Original TRM Dynamics (`pretrain_encoder_original.py`)
+
+ONE forward per batch, carry persists across batches:
+
+```python
+# Carry persists across batches (not reset)
+if train_state.carry is None:
+    train_state.carry = model.initial_carry(batch)
+
+# Single forward (dynamic halting decides when sample is done)
+carry, loss, metrics, preds, _ = model(carry=carry, batch=batch)
+
+# Single backward + optimizer step
+loss.backward()
+optim.step()
+```
+
+**Characteristics**:
+- Matches original TRM paper's training dynamics exactly
+- Encoder called once when sample starts, context cached in carry
+- Dynamic halting with Q-head exploration during training
+- Samples can span multiple batches before halting
+- Uses truncated BPTT (gradients are local to each batch)
+
+### Gradient Flow: Truncated BPTT
+
+The original TRM uses **truncated backpropagation through time**:
+
+```
+Sample taking 3 ACT steps across 3 batches:
+
+Batch 1:  carry_0 ──[forward]──→ z_H, z_L ──→ logits_1 ──→ loss_1
+          (detached)                ↓                        ↓
+                                backward ←────────────────────┘
+                                    ↓
+                            carry_1 = z.detach()  ← DETACHED!
+
+Batch 2:  carry_1 ──[forward]──→ z_H, z_L ──→ logits_2 ──→ loss_2
+          (no grad)                 ↓                        ↓
+                                backward ←────────────────────┘
+
+Batch 3:  carry_2 ──[forward]──→ z_H, z_L ──→ logits_3 ──→ loss_3 [HALT]
+```
+
+**Why this works**:
+- Early steps: poor predictions → high loss → learns to improve
+- Later steps: refined predictions → lower loss → learns when to halt
+- Model sees cumulative refinement, gradients are local per batch
 
 ### Config Options
 
 ```yaml
-# config/arch/trm_encoder.yaml
+# config/arch/trm_encoder.yaml (Online Mode)
 encoder_type: standard           # "standard", "lpn_standard", "lpn_variational"
 encoder_num_layers: 2            # Depth of grid encoder
 encoder_pooling_method: mean     # "mean", "attention", or "weighted"
@@ -201,6 +242,10 @@ num_act_steps: 1                 # Fixed ACT steps for training (1, 4, 8, 16)
 halt_max_steps: 16               # Max steps during eval (adaptive)
 
 grad_clip_norm: 1.0              # Essential for stability
+
+# config/arch/trm_encoder_original.yaml (Original Mode - additional options)
+halt_exploration_prob: 0.5       # Probability of random exploration during training
+# num_act_steps is ignored in original mode (always 1 forward per batch)
 ```
 
 ---
@@ -229,11 +274,38 @@ grad_clip_norm: 1.0              # Essential for stability
 | 4-8 | Significant improvement |
 | 16 | Best performance |
 
-**Current Experiments (Running)**:
-- A1: 1 ACT step (baseline)
-- A4: 4 ACT steps
+**Online Mode Experiments (Completed)**:
+- A1: 1 ACT step (baseline) ✓
+- A4: 4 ACT steps ✓
 - A8: 8 ACT steps
 - A16: 16 ACT steps
+
+### Phase 3: Training Mode Comparison
+
+We implemented both training modes to compare their effectiveness. See `jobs-act-mode-debug.txt` for experiments.
+
+**All experiments use pretrained decoder** (proven to improve training).
+
+**Original Mode Experiments (O-series)**:
+| Experiment | Description |
+|------------|-------------|
+| O1 | Original mode baseline (exploration 0.5) |
+| O2 | Lower exploration (0.3) |
+| O3 | Higher exploration (0.7) |
+
+**Encoder Type Comparison (E-series)**:
+| Experiment | Description |
+|------------|-------------|
+| E1 | Original mode + Hybrid Standard encoder |
+| E2 | Original mode + Hybrid Variational encoder |
+| E3 | Original mode + LPN Variational encoder |
+
+**Key Metrics**:
+- `train/q_halt_accuracy`: Does Q-head learn to predict correctness?
+- `train/steps`: Average ACT steps used
+- `eval/accuracy` and `eval/exact_accuracy`
+
+See `docs/experiments/act_mode_experiments.md` for detailed experiment design.
 
 ### Architecture Hypotheses (Tested)
 
@@ -261,34 +333,74 @@ grad_clip_norm: 1.0              # Essential for stability
 
 ## 6. Key Files
 
+### Online Learning Mode
 | File | Purpose |
 |------|---------|
-| `models/recursive_reasoning/etrm.py` | Encoder-based TRM model |
+| `pretrain_encoder.py` | Training script (online learning) |
+| `models/recursive_reasoning/etrm.py` | Model (online learning) |
+| `config/arch/trm_encoder.yaml` | Architecture config |
+| `config/cfg_pretrain_encoder_arc_agi_1.yaml` | Training config |
+
+### Original TRM Mode
+| File | Purpose |
+|------|---------|
+| `pretrain_encoder_original.py` | Training script (original dynamics) |
+| `models/recursive_reasoning/etrm_original.py` | Model (original dynamics + encoder caching) |
+| `config/arch/trm_encoder_original.yaml` | Architecture config |
+| `config/cfg_pretrain_encoder_original_arc_agi_1.yaml` | Training config |
+
+### Shared Components
+| File | Purpose |
+|------|---------|
 | `models/encoders/standard.py` | Standard demo encoder |
 | `models/encoders/lpn_variational.py` | VAE encoder |
 | `models/losses.py` | ACT loss computation |
-| `pretrain_encoder.py` | Training script |
-| `config/arch/trm_encoder.yaml` | Architecture config |
-| `config/cfg_pretrain_encoder_arc_agi_1.yaml` | Training config |
+
+### Experiment Files
+| File | Purpose |
+|------|---------|
+| `jobs.txt` | Main experiment queue |
+| `jobs-act-mode-debug.txt` | Training mode comparison experiments |
 
 ---
 
 ## 7. How to Run
 
+### Online Learning Mode
+
 ```bash
-# ACT ablation (currently running)
+# ACT ablation
 torchrun --nproc-per-node 4 pretrain_encoder.py \
     --config-name cfg_pretrain_encoder_arc_agi_1 \
-    arch.num_act_steps=1 \
-    max_train_groups=32 \
-    +project_name="mmi-714-debug" \
-    +run_name="A1_act_steps_1"
+    arch.num_act_steps=4 \
+    max_train_groups=32 max_eval_groups=32 \
+    +project_name="mmi-714-act-mode" \
+    +run_name="L1_online_4steps"
 
 # Generalization test (full dataset)
 torchrun --nproc-per-node 4 pretrain_encoder.py \
     --config-name cfg_pretrain_encoder_arc_agi_1 \
     +project_name="mmi-714-gen" \
     +run_name="G1_standard_full"
+```
+
+### Original TRM Mode
+
+```bash
+# Original mode baseline
+torchrun --nproc-per-node 4 pretrain_encoder_original.py \
+    --config-name cfg_pretrain_encoder_original_arc_agi_1 \
+    max_train_groups=32 max_eval_groups=32 \
+    +project_name="mmi-714-act-mode" \
+    +run_name="O1_original_baseline"
+
+# Original mode with different exploration
+torchrun --nproc-per-node 4 pretrain_encoder_original.py \
+    --config-name cfg_pretrain_encoder_original_arc_agi_1 \
+    arch.halt_exploration_prob=0.3 \
+    max_train_groups=32 max_eval_groups=32 \
+    +project_name="mmi-714-act-mode" \
+    +run_name="O2_original_explore0.3"
 ```
 
 ---
@@ -307,19 +419,28 @@ torchrun --nproc-per-node 4 pretrain_encoder.py \
 
 ## 9. Open Questions
 
-1. **How many ACT steps are optimal for encoder mode?**
-   - Paper shows more is better, but N steps = N× encoder forward passes
+1. **Which training mode is better for encoder-based TRM?**
+   - Online learning: More encoder gradient updates, but carry reset each batch
+   - Original mode: Dynamic halting + encoder caching, matches paper exactly
+   - Need to compare metrics across training mode experiments
 
-2. **Is the encoder architecture sufficient?**
+2. **How many ACT steps are optimal for encoder mode?**
+   - Paper shows more is better, but N steps = N× encoder forward passes
+   - Original mode: Dynamic halting learns optimal steps
+   - Online mode: Fixed N steps per batch
+
+3. **Is the encoder architecture sufficient?**
    - Currently 2 layers with mean pooling
    - LPN paper uses 8 layers with CLS token
+   - Testing hybrid encoders (E-series experiments)
 
-3. **Does variational encoding help generalization?**
+4. **Does variational encoding help generalization?**
    - KL regularization might smooth the latent space
    - But adds training complexity
 
-4. **What's the compute/performance tradeoff?**
+5. **What's the compute/performance tradeoff?**
    - More ACT steps = more compute = potentially better performance
+   - Original mode may be faster (dynamic halting saves compute)
    - Need to find the sweet spot
 
 ---
@@ -351,21 +472,46 @@ for act_step in range(num_act_steps):
         optim.zero_grad()
 ```
 
-### Encoder Forward (etrm.py)
+### Original Mode Loop (pretrain_encoder_original.py)
 
 ```python
-def _forward_train_step(self, carry, batch):
-    # 1. Encode demos fresh (for true online learning)
-    context = self.encoder(batch["demo_inputs"], batch["demo_labels"], batch["demo_mask"])
+# Carry persists across batches
+if train_state.carry is None:
+    train_state.carry = model.initial_carry(batch)
 
-    # 2. Initialize or continue inner carry
-    if carry is None:
-        inner_carry = self.inner.empty_carry(batch_size, device)
+# Single forward (dynamic halting)
+train_state.carry, loss, metrics, preds, _ = model(
+    carry=train_state.carry, batch=batch
+)
+
+# Single backward + optimizer step
+(loss / global_batch_size).backward()
+optim.step()
+optim.zero_grad()
+```
+
+### Original Mode Forward (etrm_original.py)
+
+```python
+def _forward_train_original(self, carry, batch):
+    # Determine which samples need reset (were halted)
+    needs_reset = carry.halted
+
+    # Encode demos for reset samples ONLY (cache for continuing samples)
+    if needs_reset.any():
+        new_context = self.encoder(demos)
+        context = torch.where(needs_reset.view(-1, 1, 1), new_context, carry.cached_context)
     else:
-        inner_carry = carry.inner_carry
+        context = carry.cached_context
 
-    # 3. Forward inner model with context
-    inner_carry, logits, (q_halt, q_continue) = self.inner(inner_carry, batch, context)
+    # Forward inner model
+    inner_carry, logits, (q_halt, q_continue) = self.inner(carry, batch, context)
+
+    # Dynamic halting with exploration
+    halted = is_last_step | (q_halt_logits > 0)
+    if exploration_mask:
+        min_halt_steps = randint(2, halt_max_steps + 1)
+        halted = halted & (steps >= min_halt_steps)
 
     return new_carry, outputs
 ```
