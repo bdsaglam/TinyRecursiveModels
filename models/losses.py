@@ -80,7 +80,9 @@ class ACTLossHead(nn.Module):
         """
         logits = outputs["logits"]
         q_halt_logits = outputs["q_halt_logits"]
-        labels = batch["labels"]
+        # Use labels from outputs if available (for original mode with carry persistence)
+        # Otherwise use labels from batch (for online mode)
+        labels = outputs.get("labels", batch["labels"])
         steps = outputs["steps"]  # Current step number
 
         # Compute mask

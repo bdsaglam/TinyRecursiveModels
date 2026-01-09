@@ -1,0 +1,60 @@
+# ============================================================================
+# OVERFIT EXPERIMENTS: Comparing Training Dynamics Across Approaches
+#
+# Goal: Understand how each approach learns by overfitting on a small dataset
+# Dataset: 8 training groups (very small for quick overfitting)
+# Expected: All should reach 95%+ train accuracy if learning dynamics work
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Approach 1: Original TRM with Learned Embeddings (Paper Implementation)
+# ----------------------------------------------------------------------------
+# Uses pretrain.py with puzzle_emb matrix
+# Training: ACT with dynamic halting, embeddings are learned from scratch
+# Expected: Should overfit perfectly (~100% accuracy)
+# Note: No pretraining - learns embeddings + TRM together
+[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain.py --config-name cfg_pretrain_arc_agi_1 max_train_groups=8 max_eval_groups=8 epochs=2000 eval_interval=500 lr=1e-4 +project_name="mmi-714-overfit" +run_name="A1_embeddings"
+
+# ----------------------------------------------------------------------------
+# Approach 2: Online TRM with Encoder (Our Baseline)
+# ----------------------------------------------------------------------------
+# Uses pretrain_encoder.py with online learning (num_act_steps=4)
+# Training: 4 forwards per batch, encoder gradients from all steps
+# Expected: Should overfit perfectly (~100% accuracy)
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_arc_agi_1 load_pretrained_decoder=/home/baris/repos/trm/checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_518071 max_train_groups=8 max_eval_groups=8 epochs=2000 eval_interval=500 lr=1e-4 +project_name="mmi-714-overfit" +run_name="A2_online"
+
+# ----------------------------------------------------------------------------
+# Approach 4: ACT TRM with Re-encoding (New Implementation)
+# ----------------------------------------------------------------------------
+# Uses pretrain_encoder_original.py with re-encoding (no caching)
+# Training: 1 forward per batch, carry persists, full encoder gradients
+# Expected: Should overfit like A1, but might need more batches (4x)
+# Note: May need higher LR or more epochs since fewer gradient updates per batch
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder_original.py --config-name cfg_pretrain_encoder_original_arc_agi_1 load_pretrained_decoder=/home/baris/repos/trm/checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_518071 max_train_groups=8 max_eval_groups=8 epochs=8000 eval_interval=500 lr=2e-4 +project_name="mmi-714-overfit" +run_name="A4_reencode"
+
+# ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Approach 4 FIXED: Critical bug fix for label mismatch
+# ----------------------------------------------------------------------------
+# Bug: Loss was computed using batch["labels"] instead of actual labels
+# For continuing samples, this meant wrong input-label pairs (puzzle A input vs puzzle B labels)
+# Fix: Model now returns actual labels used in outputs["labels"]
+# Expected: Should now overfit properly like A2
+[ ] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder_original.py --config-name cfg_pretrain_encoder_original_arc_agi_1 load_pretrained_decoder=/home/baris/repos/trm/checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_518071 max_train_groups=8 max_eval_groups=8 epochs=8000 eval_interval=500 lr=2e-4 +project_name="mmi-714-overfit" +run_name="A4_reencode_FIXED"
+
+# ----------------------------------------------------------------------------
+# Success Criteria:
+# ----------------------------------------------------------------------------
+# 1. A1 (embeddings): Should reach ~100% train accuracy quickly (gold standard)
+# 2. A2 (online): Should match A1 (our working baseline) ✓ 68% at step 60
+# 3. A4 (reencode): Was stuck at 42% due to label mismatch bug
+#    - A4_reencode_FIXED: Should now overfit properly
+#    - If it can't overfit even with 8k epochs → still has bugs
+#    - If it overfits but slower → expected due to 1 step vs 4 steps per batch
+#    - Compare at equivalent sample counts, not just epochs
+#
+# Key Metrics to Track:
+# - train/accuracy: Should reach ~100% for all approaches
+# - train/steps: A4 should show adaptive halting (varying steps)
+# - grad/encoder_norm: A2 and A4 should both show encoder gradients
+# - train/lm_loss: Should decrease to near 0 for all approaches

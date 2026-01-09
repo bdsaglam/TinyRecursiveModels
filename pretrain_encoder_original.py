@@ -737,16 +737,20 @@ def evaluate_encoder(
             # Aggregate metrics
             set_id = set_ids[set_name]
 
+            # Separate encoder diagnostics (scalars) from tensor metrics
+            tensor_metrics = {k: v for k, v in metrics.items() if not k.startswith("encoder_")}
+            # Note: encoder diagnostics are floats and not accumulated during eval
+
             if metric_values is None:
-                metric_keys = list(sorted(metrics.keys()))
+                metric_keys = list(sorted(tensor_metrics.keys()))
                 metric_values = torch.zeros(
-                    (len(set_ids), len(metrics.values())),
+                    (len(set_ids), len(tensor_metrics.values())),
                     dtype=torch.float32,
                     device="cuda",
                 )
 
-            metric_values[set_id] += torch.stack([metrics[k] for k in metric_keys])
-            del metrics
+            metric_values[set_id] += torch.stack([tensor_metrics[k] for k in metric_keys])
+            del metrics, tensor_metrics
 
         # Concatenate save preds
         save_preds = {k: torch.cat(v, dim=0) for k, v in save_preds.items()}

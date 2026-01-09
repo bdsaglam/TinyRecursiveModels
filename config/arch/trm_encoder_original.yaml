@@ -1,11 +1,11 @@
-# Encoder-based TRM architecture config - ORIGINAL TRAINING MODE
+# Encoder-based TRM architecture config - ORIGINAL TRAINING MODE with RE-ENCODING
 #
-# Uses etrm_original.py which implements ORIGINAL TRM training dynamics:
+# Uses etrm_original.py which implements Approach 4 (ACT TRM with Re-encoding):
 # - ONE forward per batch (carry persists across batches)
 # - Dynamic halting with Q-head exploration during training
-# - Encoder called once when sample starts (cached in carry)
+# - Encoder RE-ENCODES full batch every step (no caching for full gradients)
 #
-# This matches the original TRM paper's training approach.
+# This combines original TRM dynamics with full encoder gradient coverage.
 name: recursive_reasoning.etrm_original@TRMWithEncoder
 loss:
   name: losses@ACTLossHead

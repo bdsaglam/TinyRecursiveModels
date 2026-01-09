@@ -1,11 +1,12 @@
 """
-Encoder-based TRM (eTRM) - ORIGINAL TRAINING MODE.
+Encoder-based TRM (eTRM) - ORIGINAL TRAINING MODE with RE-ENCODING.
 
-This is a clone of etrm.py modified to use ORIGINAL TRM training dynamics:
+This is a clone of etrm.py modified to use ORIGINAL TRM training dynamics with
+re-encoding instead of caching (Approach 4):
 - ONE forward per batch (not num_act_steps like online learning)
 - Carry persists across batches (samples can span multiple batches)
 - Dynamic halting with Q-head exploration
-- Encoder called once when sample starts (cached in carry)
+- Encoder RE-ENCODES full batch every step (NO CACHING)
 
 This matches the original TRM paper's training approach where:
 - Gradients are LOCAL to each batch (truncated BPTT)
@@ -14,9 +15,14 @@ This matches the original TRM paper's training approach where:
 
 Key differences from etrm.py (online learning):
 1. Training uses _forward_train_original() with dynamic halting
-2. Encoder output cached in carry (not re-encoded each step)
+2. Encoder re-encodes full batch every step (100% gradient coverage)
 3. Single forward per batch (vs num_act_steps forwards)
 4. halt_exploration_prob controls random exploration during training
+
+This approach provides:
+- Full encoder gradients (like online mode)
+- Dynamic halting benefits (like ACT mode)
+- Adaptive efficiency (easy samples halt early, hard samples continue)
 
 Use pretrain_encoder_original.py to train with this mode.
 """
@@ -61,12 +67,11 @@ class TRMEncoderInnerCarry:
 
 @dataclass
 class TRMEncoderCarry:
-    """Carry state for encoder-based TRM with cached context."""
+    """Carry state for encoder-based TRM (no caching - re-encodes every step)."""
     inner_carry: TRMEncoderInnerCarry
     steps: torch.Tensor
     halted: torch.Tensor
     current_data: Dict[str, torch.Tensor]
-    cached_context: Optional[torch.Tensor] = None  # Cached encoder output
 
 
 class TRMEncoderConfig(BaseModel):
@@ -411,7 +416,6 @@ class TRMWithEncoder(nn.Module):
                 if k in ["inputs", "labels", "puzzle_identifiers",
                          "demo_inputs", "demo_labels", "demo_mask"]
             },
-            cached_context=None,
         )
 
     def forward(
@@ -440,14 +444,16 @@ class TRMWithEncoder(nn.Module):
         self, carry: TRMEncoderCarry, batch: Dict[str, torch.Tensor]
     ) -> Tuple[TRMEncoderCarry, Dict[str, torch.Tensor]]:
         """
-        Original TRM training forward with dynamic halting.
+        Original TRM training forward with dynamic halting and RE-ENCODING.
 
         ONE ACT step per forward call with:
         - Carry persists across batches (samples continue where they left off)
-        - Encoder called once when sample starts (cached in carry)
+        - Encoder RE-ENCODES full batch every step (NO CACHING)
         - Dynamic halting with Q-head exploration
+        - Full gradient flow to encoder (100% coverage)
 
-        This matches the original TRM paper's training dynamics.
+        This matches the original TRM paper's training dynamics with the addition
+        of re-encoding to maintain full encoder gradients.
 
         Args:
             carry: Carry from previous batch (required)
@@ -474,36 +480,23 @@ class TRMWithEncoder(nn.Module):
         # Track encoder diagnostics
         encoder_diagnostics = {}
 
-        # Encode demos for samples that need reset ONLY (cache for continuing samples)
-        if needs_reset.any():
-            # Encode demos for reset samples
-            new_context = self.encoder(
-                new_current_data["demo_inputs"],
-                new_current_data["demo_labels"],
-                new_current_data["demo_mask"],
-            )
+        # ALWAYS ENCODE - NO CACHING!
+        # This ensures 100% gradient coverage for the encoder
+        context = self.encoder(
+            new_current_data["demo_inputs"],   # Full batch
+            new_current_data["demo_labels"],   # Full batch
+            new_current_data["demo_mask"],     # Full batch
+        )
 
-            # Compute encoder diagnostics
-            with torch.no_grad():
-                encoder_diagnostics["encoder_output_mean"] = new_context.mean().item()
-                encoder_diagnostics["encoder_output_std"] = new_context.std().item()
-                encoder_diagnostics["encoder_output_norm"] = new_context.norm(dim=-1).mean().item()
-                batch_mean = new_context.mean(dim=0, keepdim=True)
-                cross_sample_var = ((new_context - batch_mean) ** 2).mean()
-                encoder_diagnostics["encoder_cross_sample_var"] = cross_sample_var.item()
-                encoder_diagnostics["encoder_token_std"] = new_context.std(dim=0).mean().item()
-
-            # For continuing samples, use cached context
-            if carry.cached_context is not None and not needs_reset.all():
-                context = torch.where(
-                    needs_reset.view(-1, 1, 1),
-                    new_context,
-                    carry.cached_context,
-                )
-            else:
-                context = new_context
-        else:
-            context = carry.cached_context
+        # Compute encoder diagnostics
+        with torch.no_grad():
+            encoder_diagnostics["encoder_output_mean"] = context.mean().item()
+            encoder_diagnostics["encoder_output_std"] = context.std().item()
+            encoder_diagnostics["encoder_output_norm"] = context.norm(dim=-1).mean().item()
+            batch_mean = context.mean(dim=0, keepdim=True)
+            cross_sample_var = ((context - batch_mean) ** 2).mean()
+            encoder_diagnostics["encoder_cross_sample_var"] = cross_sample_var.item()
+            encoder_diagnostics["encoder_token_std"] = context.std(dim=0).mean().item()
 
         # Reset inner carry for halted samples
         new_inner_carry = self.inner.reset_carry(needs_reset, carry.inner_carry)
@@ -515,8 +508,11 @@ class TRMWithEncoder(nn.Module):
         )
 
         # Build outputs
+        # IMPORTANT: Return the actual labels used (from new_current_data, not batch)
+        # For continuing samples, these are their original labels from when they started
         outputs = {
             "logits": logits,
+            "labels": new_current_data["labels"],  # Actual labels for loss computation
             "q_halt_logits": q_halt_logits,
             "q_continue_logits": q_continue_logits,
             **encoder_diagnostics,
@@ -547,12 +543,12 @@ class TRMWithEncoder(nn.Module):
         # Track steps for metrics
         outputs["steps"] = new_steps.float()
 
+        # No caching - context is recomputed every step
         new_carry = TRMEncoderCarry(
             inner_carry=new_inner_carry,
             steps=new_steps,
             halted=halted,
             current_data=new_current_data,
-            cached_context=context.detach(),  # Cache encoder output for next batch
         )
 
         return new_carry, outputs
@@ -561,10 +557,11 @@ class TRMWithEncoder(nn.Module):
         self, carry: TRMEncoderCarry, batch: Dict[str, torch.Tensor]
     ) -> Tuple[TRMEncoderCarry, Dict[str, torch.Tensor]]:
         """
-        Eval forward with adaptive halting (original logic).
+        Eval forward with adaptive halting and RE-ENCODING.
 
         Uses carry to continue iterations across forward calls.
         Halts when Q-head signals or max steps reached.
+        Re-encodes full batch every step (consistent with training).
         """
         # Determine which samples need reset (were halted)
         needs_reset = carry.halted
@@ -583,36 +580,22 @@ class TRMWithEncoder(nn.Module):
         # Track encoder diagnostics
         encoder_diagnostics = {}
 
-        # Compute context for samples that need reset
-        if needs_reset.any():
-            # Encode demos for reset samples
-            new_context = self.encoder(
-                new_current_data["demo_inputs"],
-                new_current_data["demo_labels"],
-                new_current_data["demo_mask"],
-            )
+        # ALWAYS ENCODE - NO CACHING! (consistent with training)
+        context = self.encoder(
+            new_current_data["demo_inputs"],   # Full batch
+            new_current_data["demo_labels"],   # Full batch
+            new_current_data["demo_mask"],     # Full batch
+        )
 
-            # Compute encoder diagnostics (detached, no grad impact)
-            with torch.no_grad():
-                encoder_diagnostics["encoder_output_mean"] = new_context.mean().item()
-                encoder_diagnostics["encoder_output_std"] = new_context.std().item()
-                encoder_diagnostics["encoder_output_norm"] = new_context.norm(dim=-1).mean().item()
-                batch_mean = new_context.mean(dim=0, keepdim=True)
-                cross_sample_var = ((new_context - batch_mean) ** 2).mean()
-                encoder_diagnostics["encoder_cross_sample_var"] = cross_sample_var.item()
-                encoder_diagnostics["encoder_token_std"] = new_context.std(dim=0).mean().item()
-
-            # For continuing samples, use cached context
-            if carry.cached_context is not None and not needs_reset.all():
-                context = torch.where(
-                    needs_reset.view(-1, 1, 1),
-                    new_context,
-                    carry.cached_context,
-                )
-            else:
-                context = new_context
-        else:
-            context = carry.cached_context
+        # Compute encoder diagnostics
+        with torch.no_grad():
+            encoder_diagnostics["encoder_output_mean"] = context.mean().item()
+            encoder_diagnostics["encoder_output_std"] = context.std().item()
+            encoder_diagnostics["encoder_output_norm"] = context.norm(dim=-1).mean().item()
+            batch_mean = context.mean(dim=0, keepdim=True)
+            cross_sample_var = ((context - batch_mean) ** 2).mean()
+            encoder_diagnostics["encoder_cross_sample_var"] = cross_sample_var.item()
+            encoder_diagnostics["encoder_token_std"] = context.std(dim=0).mean().item()
 
         # Reset inner carry for halted samples
         new_inner_carry = self.inner.reset_carry(needs_reset, carry.inner_carry)
@@ -623,8 +606,10 @@ class TRMWithEncoder(nn.Module):
             new_inner_carry, new_current_data, context
         )
 
+        # IMPORTANT: Return the actual labels used (from new_current_data, not batch)
         outputs = {
             "logits": logits,
+            "labels": new_current_data["labels"],  # Actual labels for loss computation
             "q_halt_logits": q_halt_logits,
             "q_continue_logits": q_continue_logits,
             **encoder_diagnostics,
@@ -638,12 +623,12 @@ class TRMWithEncoder(nn.Module):
             # During eval, always run to max steps (for batch consistency)
             halted = is_last_step
 
+        # No caching - context is recomputed every step
         new_carry = TRMEncoderCarry(
             inner_carry=new_inner_carry,
             steps=new_steps,
             halted=halted,
             current_data=new_current_data,
-            cached_context=context.detach(),  # Cache for next iteration
         )
 
         return new_carry, outputs
