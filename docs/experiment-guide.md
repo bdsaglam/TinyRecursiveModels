@@ -434,7 +434,7 @@ Create a custom W&B dashboard with these panels:
 
 ```bash
 # Small subset (32 groups) to test overfitting
-torchrun --nproc-per-node 4 pretrain_encoder_original.py \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
     --config-name cfg_pretrain_encoder_original_arc_agi_1 \
     max_train_groups=32 max_eval_groups=32 \
     +project_name="etrm-dev" \
@@ -451,7 +451,7 @@ torchrun --nproc-per-node 4 pretrain_encoder_original.py \
 
 ```bash
 # Full dataset
-torchrun --nproc-per-node 4 pretrain_encoder_original.py \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
     --config-name cfg_pretrain_encoder_original_arc_agi_1 \
     +project_name="etrm-full" \
     +run_name="<experiment_name>_full"

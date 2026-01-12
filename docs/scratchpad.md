@@ -44,11 +44,11 @@ eval_interval=100 \
 
 # ========== ENCODER-BASED TRM TRAINING ==========
 # Train TRM with demo encoder (replaces learned puzzle embeddings)
-# Uses: pretrain_encoder.py, config/cfg_pretrain_encoder.yaml, config/arch/trm_encoder.yaml
+# Uses: pretrain_etrm.py, config/cfg_pretrain_encoder.yaml, config/arch/trm_encoder.yaml
 # Model: models/recursive_reasoning/etrm.py (TRMWithEncoder)
 # Dataset: dataset/fewshot_puzzle_dataset.py (FewShotPuzzleDataset)
 
-torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder.py --config-name cfg_pretrain_encoder_paper \
+torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_encoder_paper \
 log_predictions_every=100 \
 epochs=1000 \
 eval_interval=100 \

@@ -123,8 +123,8 @@ Before any architecture changes, verify the model CAN overfit:
 
 ```bash
 # Test: Can model memorize 10 samples?
-DISABLE_COMPILE=1 python pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+DISABLE_COMPILE=1 python pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     epochs=1000 \
     max_train_puzzles=10 \
     global_batch_size=10 \
@@ -160,7 +160,7 @@ DISABLE_COMPILE=1 python pretrain_encoder.py \
 
 All architecture and training improvements are now configurable via YAML:
 
-**Training Config** (`config/cfg_pretrain_encoder_arc_agi_1.yaml`):
+**Training Config** (`config/cfg_pretrain_etrm_arc_agi_1.yaml`):
 ```yaml
 lr: 3e-5                  # E2: Lower learning rate
 grad_clip_norm: 1.0       # E3: Gradient clipping
@@ -181,29 +181,29 @@ encoder_norm_style: pre         # E10: Pre-norm (stable)
 
 ```bash
 # E1: Overfit test (MUST PASS FIRST)
-DISABLE_COMPILE=1 python pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+DISABLE_COMPILE=1 python pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     epochs=1000 max_train_puzzles=10 global_batch_size=10 \
     eval_interval=100 +run_name="E1_overfit"
 
 # E4: Lower LR + grad clip
-DISABLE_COMPILE=1 python pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+DISABLE_COMPILE=1 python pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     lr=3e-5 grad_clip_norm=1.0 +run_name="E4_lr_clip"
 
 # E7: Attention pooling
-DISABLE_COMPILE=1 python pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+DISABLE_COMPILE=1 python pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     arch.encoder_pooling_method=attention +run_name="E7_attn_pool"
 
 # E11: Separate learning rates
-DISABLE_COMPILE=1 python pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+DISABLE_COMPILE=1 python pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     encoder_lr_scale=0.1 +run_name="E11_sep_lr"
 
 # Combined: Best practices
-DISABLE_COMPILE=1 python pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+DISABLE_COMPILE=1 python pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     lr=3e-5 grad_clip_norm=1.0 \
     arch.encoder_num_layers=4 \
     arch.encoder_pooling_method=attention \
@@ -257,7 +257,7 @@ num_heads: 8
 
 ### Training Config
 ```yaml
-# config/cfg_pretrain_encoder_arc_agi_1.yaml
+# config/cfg_pretrain_etrm_arc_agi_1.yaml
 lr: 1e-4
 lr_warmup_steps: 2000
 weight_decay: 0.1

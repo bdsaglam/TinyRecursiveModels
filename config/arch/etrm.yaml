@@ -1,8 +1,16 @@
 # Encoder-based TRM architecture config
+#
+# Uses etrm.py which implements dynamic ACT halting:
+# - ONE forward per batch (carry persists across batches)
+# - Dynamic halting with Q-head exploration during training
+# - Encoder RE-ENCODES full batch every step (no caching for full gradients)
+#
+# This combines original TRM dynamics with full encoder gradient coverage.
 name: recursive_reasoning.etrm@TRMWithEncoder
 loss:
   name: losses@ACTLossHead
   loss_type: stablemax_cross_entropy
+  kl_weight: 0.0  # KL divergence weight for variational encoders (0 = disabled)
 
 # Encoder settings
 encoder_type: standard         # "standard", "lpn_standard", "lpn_variational"
@@ -14,12 +22,12 @@ encoder_norm_style: post       # "pre" or "post" normalization
 encoder_qk_norm: False         # QK normalization in attention
 freeze_encoder: False          # Freeze encoder weights (for diagnostic experiments)
 
-# ACT settings
-# Training uses fixed ACT steps (simpler, ensures encoder gradients)
-# Evaluation uses adaptive halting with halt_max_steps
-num_act_steps: 4             # Fixed ACT steps for training (1, 4, 8, 16)
-halt_exploration_prob: 0.1   # Only used during eval
-halt_max_steps: 16           # Max steps during eval
+# ACT settings - ORIGINAL TRAINING MODE
+# Training uses dynamic halting with exploration (like original TRM)
+# Q-head learns to predict correctness through exploration
+num_act_steps: 1             # Ignored in original mode (always 1 forward per batch)
+halt_exploration_prob: 0.5   # Exploration probability during training
+halt_max_steps: 16           # Max steps before forced halt
 
 # TRM reasoning cycles
 H_cycles: 3

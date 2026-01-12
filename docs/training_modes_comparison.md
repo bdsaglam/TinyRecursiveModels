@@ -17,9 +17,9 @@ This document compares different training approaches for the Tiny Recursive Reas
 | Approach | Puzzle Representation | Halting | Encoder Gradients | Training Script | Status |
 |----------|---------------------|----------|-------------------|-----------------|--------|
 | **TRM** | Learned embeddings | Dynamic (ACT) | N/A | `pretrain.py` | ✅ Baseline |
-| **ETRM-FCT** | Encoder | Fixed steps | Full (every step) | `pretrain_encoder.py` | ⚠️ Works but not continuing |
+| **ETRM-FCT** | Encoder | Fixed steps | Full (every step) | `pretrain_etrm.py` | ⚠️ Works but not continuing |
 | **ETRM (cached)** | Encoder | Dynamic (ACT) | Sparse (~2%) | (deprecated) | ❌ Gradient starvation |
-| **ETRM** ✨ | Encoder | Dynamic (ACT) | Full (every step) | `pretrain_encoder_original.py` | ✅ Main approach |
+| **ETRM** ✨ | Encoder | Dynamic (ACT) | Full (every step) | `pretrain_etrm.py` | ✅ Main approach |
 
 ---
 
@@ -739,7 +739,7 @@ train/steps:           11.34   (avg ACT steps used)
 
 ### For This Research Project (Current Status: Jan 9, 2026)
 
-**Use ETRM** (`pretrain_encoder_original.py`) - **This is our main research contribution**
+**Use ETRM** (`pretrain_etrm.py`) - **This is our main research contribution**
 
 ✅ **Why**:
 - Preserves TRM's adaptive computation (the key innovation from the paper)
@@ -808,8 +808,8 @@ carry.cached_context = context  # No detach! Keep gradients
 - Monitoring convergence to compare with ETRM-FCT's 96.7%
 
 ### 📝 Files Modified
-- `models/recursive_reasoning/etrm_original.py`: ETRM re-encoding implementation
-- `pretrain_encoder_original.py`: Training script and evaluation fixes
+- `models/recursive_reasoning/etrm.py`: ETRM re-encoding implementation
+- `pretrain_etrm.py`: Training script and evaluation fixes
 - `docs/progress_2026_01_09.md`: Comprehensive debugging session documentation
 - `docs/training_modes_comparison.md`: This document (terminology updated)
 

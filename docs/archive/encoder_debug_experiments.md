@@ -21,7 +21,7 @@ The bug chain:
 4. Code goes to `else: context = carry.cached_context` (DETACHED!)
 5. Encoder is never called after first batch → zero gradients
 
-**Fix**: In `pretrain_encoder.py`, force `halted=True` at start of each training batch:
+**Fix**: In `pretrain_etrm.py`, force `halted=True` at start of each training batch:
 ```python
 else:
     # Force fresh encoding each batch during training
@@ -106,7 +106,7 @@ Batch size: 256
 
 **Configuration**:
 ```
-Model: pretrain_encoder.py (TRM with demo encoder)
+Model: pretrain_etrm.py (TRM with demo encoder)
 Encoder: standard (2-layer grid transformer + mean pooling)
 Epochs: 100,000
 Groups: 32 train, 32 eval
@@ -140,7 +140,7 @@ Batch size: 256
 
 **Configuration**:
 ```
-Model: pretrain_encoder.py
+Model: pretrain_etrm.py
 arch.freeze_encoder: true (encoder weights frozen, random init)
 Everything else same as E1v2
 ```
@@ -514,7 +514,7 @@ Better: Add criteria like "stop if accuracy < 20% at 50k epochs"
 **E_diag1: Frozen Encoder** (add to Phase 1)
 ```bash
 # Freeze encoder, only train TRM - tests if TRM can use ANY conditioning
-torchrun ... pretrain_encoder.py ... arch.freeze_encoder=true +run_name="E_diag1_frozen_encoder"
+torchrun ... pretrain_etrm.py ... arch.freeze_encoder=true +run_name="E_diag1_frozen_encoder"
 ```
 
 **E_diag2: Gradient Logging** (modify E1v2)

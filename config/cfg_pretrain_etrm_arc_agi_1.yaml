@@ -8,7 +8,7 @@
 # This matches the original TRM paper's training approach.
 
 defaults:
-  - arch: trm_encoder_original
+  - arch: etrm
   - _self_
 
 hydra:

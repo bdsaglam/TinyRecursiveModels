@@ -354,7 +354,7 @@ If pursuing variational encoders further:
 
 **Modified Files**:
 - `models/losses.py`: Added `kl_weight` parameter and KL loss integration
-- `models/recursive_reasoning/etrm_original.py`: Modified encoder calls with `return_full_output=True`
+- `models/recursive_reasoning/etrm.py`: Modified encoder calls with `return_full_output=True`
 - `config/arch/trm_encoder_original.yaml`: Added `kl_weight: 0.0` to loss config
 
 **Experiment Results**:

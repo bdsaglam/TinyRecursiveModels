@@ -370,4 +370,4 @@ Only difference: **how the puzzle representation is obtained**.
 | `puzzle_dataset.py` | Embedding mode data loader |
 | `dataset/fewshot_puzzle_dataset.py` | Encoder mode data loader |
 | `evaluators/arc.py` | Evaluation with voting |
-| `pretrain_encoder.py` | Training script (both modes) |
+| `pretrain_etrm.py` | Training script (both modes) |

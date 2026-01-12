@@ -163,7 +163,7 @@ During eval: encoder must generalize to unseen puzzles' demos
 
 We implemented **two encoder-based training modes** to explore different training dynamics:
 
-#### ETRM-FCT: Fixed Computation Time (`pretrain_encoder.py`)
+#### ETRM-FCT: Fixed Computation Time (`pretrain_etrm.py`)
 
 Multiple forward→backward→optim.step() per batch:
 
@@ -187,7 +187,7 @@ for act_step in range(num_act_steps):
 - Carry resets because all samples finish together
 - Works well (96.7% train accuracy) but not continuing with this variant
 
-#### ETRM: Encoder-based TRM with Dynamic Halting (`pretrain_encoder_original.py`)
+#### ETRM: Encoder-based TRM with Dynamic Halting (`pretrain_etrm.py`)
 
 ONE forward per batch, carry persists across batches:
 
@@ -346,16 +346,16 @@ See `docs/experiments/act_mode_experiments.md` for detailed experiment design.
 ### ETRM-FCT (Fixed Computation Time)
 | File | Purpose |
 |------|---------|
-| `pretrain_encoder.py` | Training script (fixed steps) |
+| `pretrain_etrm.py` | Training script (fixed steps) |
 | `models/recursive_reasoning/etrm.py` | Model (fixed steps implementation) |
 | `config/arch/trm_encoder.yaml` | Architecture config |
-| `config/cfg_pretrain_encoder_arc_agi_1.yaml` | Training config |
+| `config/cfg_pretrain_etrm_arc_agi_1.yaml` | Training config |
 
 ### ETRM (Dynamic Halting - Main Approach)
 | File | Purpose |
 |------|---------|
-| `pretrain_encoder_original.py` | Training script (dynamic halting) |
-| `models/recursive_reasoning/etrm_original.py` | Model (ETRM implementation with re-encoding) |
+| `pretrain_etrm.py` | Training script (dynamic halting) |
+| `models/recursive_reasoning/etrm.py` | Model (ETRM implementation with re-encoding) |
 | `config/arch/trm_encoder_original.yaml` | Architecture config |
 | `config/cfg_pretrain_encoder_original_arc_agi_1.yaml` | Training config |
 
@@ -380,16 +380,16 @@ See `docs/experiments/act_mode_experiments.md` for detailed experiment design.
 
 ```bash
 # Fixed computation time experiments
-torchrun --nproc-per-node 4 pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     arch.num_act_steps=4 \
     max_train_groups=32 max_eval_groups=32 \
     +project_name="mmi-714-act-mode" \
     +run_name="etrm_fct_4steps"
 
 # Full dataset (if needed)
-torchrun --nproc-per-node 4 pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     +project_name="mmi-714-gen" \
     +run_name="etrm_fct_full"
 ```
@@ -398,14 +398,14 @@ torchrun --nproc-per-node 4 pretrain_encoder.py \
 
 ```bash
 # ETRM baseline
-torchrun --nproc-per-node 4 pretrain_encoder_original.py \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
     --config-name cfg_pretrain_encoder_original_arc_agi_1 \
     max_train_groups=32 max_eval_groups=32 \
     +project_name="mmi-714-act-mode" \
     +run_name="etrm_baseline"
 
 # ETRM with different exploration
-torchrun --nproc-per-node 4 pretrain_encoder_original.py \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
     --config-name cfg_pretrain_encoder_original_arc_agi_1 \
     arch.halt_exploration_prob=0.3 \
     max_train_groups=32 max_eval_groups=32 \
@@ -466,7 +466,7 @@ torchrun --nproc-per-node 4 pretrain_encoder_original.py \
 
 ## Appendix: Key Code Patterns
 
-### ETRM-FCT Loop (pretrain_encoder.py)
+### ETRM-FCT Loop (pretrain_etrm.py)
 
 ```python
 carry = None  # Fresh start each batch
@@ -482,7 +482,7 @@ for act_step in range(num_act_steps):
         optim.zero_grad()
 ```
 
-### ETRM Loop (pretrain_encoder_original.py)
+### ETRM Loop (pretrain_etrm.py)
 
 ```python
 # Carry persists across batches
@@ -500,7 +500,7 @@ optim.step()
 optim.zero_grad()
 ```
 
-### ETRM Forward (etrm_original.py)
+### ETRM Forward (etrm.py)
 
 **Current implementation (re-encoding, as of Jan 9, 2026):**
 

@@ -1,11 +1,22 @@
 """
-Training script for encoder-based TRM.
+Training script for encoder-based TRM TRAINING MODE.
 
-Key differences from pretrain.py:
-1. Uses FewShotPuzzleDataset instead of PuzzleDataset
-2. Uses TRMWithEncoder model
-3. Single optimizer (no puzzle_emb SignSGD)
-4. Batch contains demo_inputs, demo_labels, demo_mask
+This script implements TRM training dynamics:
+- ONE forward per batch (not num_act_steps like online learning)
+- Carry persists across batches (samples can span multiple batches)
+- Dynamic halting with Q-head exploration
+- Encoder called once when sample starts (cached in carry)
+
+This matches the TRM paper's training approach where:
+- Gradients are LOCAL to each batch (truncated BPTT)
+- Carry state persists but is detached between batches
+- Q-head learns when to halt through exploration
+
+Key differences from pretrain_etrm.py (online learning):
+1. Single forward per batch (no ACT loop)
+2. Carry persists in train_state (not reset each batch)
+3. Uses etrm.py model with _forward_train()
+4. halt_exploration_prob controls random exploration during training
 """
 
 import copy
@@ -472,15 +483,15 @@ def train_batch_encoder(
     return_preds: bool = False,
 ):
     """
-    Training batch step for encoder mode with online learning.
+    Training batch step with ORIGINAL TRM dynamics.
 
-    True online learning: for each ACT step, we do:
-    1. Forward (encode demos fresh + inner model step)
-    2. Backward
-    3. Optimizer step
+    Key differences from online learning:
+    - ONE forward per batch (no ACT loop)
+    - Carry persists across batches (samples can span multiple batches)
+    - Dynamic halting with Q-head exploration
+    - Encoder called once when sample starts (cached in carry)
 
-    This matches the original paper's training dynamics where each
-    ACT step benefits from weight updates made by earlier steps.
+    This matches the original TRM paper's training dynamics.
     """
     train_state.step += 1
     if train_state.step > train_state.total_steps:
@@ -489,8 +500,10 @@ def train_batch_encoder(
     # To device
     batch = {k: v.cuda() for k, v in batch.items()}
 
-    # Get number of ACT steps from config
-    num_act_steps = config.arch.num_act_steps
+    # Initialize carry if None (first batch)
+    if train_state.carry is None:
+        with torch.device("cuda"):
+            train_state.carry = train_state.model.initial_carry(batch)
 
     # Staged training: check freeze periods
     encoder_freeze_period = (
@@ -533,75 +546,60 @@ def train_batch_encoder(
             print(f"  Full model training begins")
             print(f"{'='*60}\n")
 
-    # Online learning: forward + backward + optim.step() per ACT step
-    carry = None  # Fresh start each batch
-    final_metrics = None
-    final_preds = None
+    # Forward (ONE step, carry persists across batches)
+    return_keys = ["preds"] if return_preds else []
+    train_state.carry, loss, metrics, preds, _ = train_state.model(
+        carry=train_state.carry, batch=batch, return_keys=return_keys
+    )
+
+    # Scale loss for gradient accumulation consistency
+    ((1 / global_batch_size) * loss).backward()
+
+    # Gradient clipping (before allreduce for consistency)
+    if config.grad_clip_norm > 0:
+        torch.nn.utils.clip_grad_norm_(train_state.model.parameters(), max_norm=config.grad_clip_norm)
+
+    # Compute gradient norms
     grad_norms = {}
+    if rank == 0:
+        grad_norms = compute_gradient_norms(train_state.model)
+
+    # Allreduce
+    if world_size > 1:
+        for param in train_state.model.parameters():
+            if param.grad is not None:
+                dist.all_reduce(param.grad)
+
+    # Apply optimizer
     lr_this_step = None
     encoder_lr_this_step = None
+    for optim_idx, (optim, base_lr) in enumerate(zip(train_state.optimizers, train_state.optimizer_lrs)):
+        is_encoder_optim = (optim_idx == 1 and len(train_state.optimizers) > 1)
 
-    for act_step in range(num_act_steps):
-        # Forward (encode demos fresh + one inner model step)
-        return_keys = ["preds"] if (return_preds and act_step == num_act_steps - 1) else []
-        carry, loss, metrics, preds, _ = train_state.model(
-            carry=carry, batch=batch, return_keys=return_keys
-        )
-
-        # Scale loss for gradient accumulation consistency
-        ((1 / global_batch_size) * loss).backward()
-
-        # Gradient clipping (before allreduce for consistency)
-        if config.grad_clip_norm > 0:
-            torch.nn.utils.clip_grad_norm_(train_state.model.parameters(), max_norm=config.grad_clip_norm)
-
-        # Compute gradient norms (only on final step for logging)
-        if rank == 0 and act_step == num_act_steps - 1:
-            grad_norms = compute_gradient_norms(train_state.model)
-
-        # Allreduce
-        if world_size > 1:
-            for param in train_state.model.parameters():
-                if param.grad is not None:
-                    dist.all_reduce(param.grad)
-
-        # Apply optimizer
-        for optim_idx, (optim, base_lr) in enumerate(zip(train_state.optimizers, train_state.optimizer_lrs)):
-            is_encoder_optim = (optim_idx == 1 and len(train_state.optimizers) > 1)
-
-            # Skip encoder optimizer during encoder freeze period
-            if is_encoder_optim and encoder_freeze_period:
-                optim.zero_grad()
-                encoder_lr_this_step = 0.0
-                continue
-
-            # Skip decoder optimizer during decoder freeze period
-            if not is_encoder_optim and decoder_freeze_period:
-                optim.zero_grad()
-                lr_this_step = 0.0
-                continue
-
-            lr = compute_lr(base_lr, config, train_state)
-
-            for param_group in optim.param_groups:
-                param_group["lr"] = lr
-
-            optim.step()
+        # Skip encoder optimizer during encoder freeze period
+        if is_encoder_optim and encoder_freeze_period:
             optim.zero_grad()
+            encoder_lr_this_step = 0.0
+            continue
 
-            if is_encoder_optim:
-                encoder_lr_this_step = lr
-            else:
-                lr_this_step = lr
+        # Skip decoder optimizer during decoder freeze period
+        if not is_encoder_optim and decoder_freeze_period:
+            optim.zero_grad()
+            lr_this_step = 0.0
+            continue
 
-        # Keep metrics/preds from final step for logging
-        if act_step == num_act_steps - 1:
-            final_metrics = metrics
-            final_preds = preds
+        lr = compute_lr(base_lr, config, train_state)
 
-    # Use final step's metrics for logging
-    metrics = final_metrics
-    preds = final_preds
+        for param_group in optim.param_groups:
+            param_group["lr"] = lr
+
+        optim.step()
+        optim.zero_grad()
+
+        if is_encoder_optim:
+            encoder_lr_this_step = lr
+        else:
+            lr_this_step = lr
 
     # Separate encoder diagnostics (scalars) from tensor metrics
     encoder_diagnostics = {}
@@ -632,7 +630,6 @@ def train_batch_encoder(
             }
 
             reduced_metrics["train/lr"] = lr_this_step
-            reduced_metrics["train/num_act_steps"] = num_act_steps
             reduced_metrics["train/decoder_frozen"] = 1.0 if lr_this_step == 0 else 0.0
             if encoder_lr_this_step is not None:
                 reduced_metrics["train/encoder_lr"] = encoder_lr_this_step
@@ -740,16 +737,20 @@ def evaluate_encoder(
             # Aggregate metrics
             set_id = set_ids[set_name]
 
+            # Separate encoder diagnostics (scalars) from tensor metrics
+            tensor_metrics = {k: v for k, v in metrics.items() if not k.startswith("encoder_")}
+            # Note: encoder diagnostics are floats and not accumulated during eval
+
             if metric_values is None:
-                metric_keys = list(sorted(metrics.keys()))
+                metric_keys = list(sorted(tensor_metrics.keys()))
                 metric_values = torch.zeros(
-                    (len(set_ids), len(metrics.values())),
+                    (len(set_ids), len(tensor_metrics.values())),
                     dtype=torch.float32,
                     device="cuda",
                 )
 
-            metric_values[set_id] += torch.stack([metrics[k] for k in metric_keys])
-            del metrics
+            metric_values[set_id] += torch.stack([tensor_metrics[k] for k in metric_keys])
+            del metrics, tensor_metrics
 
         # Concatenate save preds
         save_preds = {k: torch.cat(v, dim=0) for k, v in save_preds.items()}
@@ -876,7 +877,7 @@ def load_synced_config(
     return objects[0]  # type: ignore
 
 
-@hydra.main(config_path="config", config_name="cfg_pretrain_encoder", version_base=None)
+@hydra.main(config_path="config", config_name="cfg_pretrain_etrm_arc_agi_1", version_base=None)
 def launch(hydra_config: DictConfig):
     RANK = 0
     WORLD_SIZE = 1

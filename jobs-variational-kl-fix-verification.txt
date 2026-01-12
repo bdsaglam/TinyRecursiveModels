@@ -21,27 +21,27 @@
 # We test a range around their value to find optimal
 
 # VKL1: LPN_variational with kl_weight=0.0001 (LPN paper value - 1e-4)
-[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder_original.py --config-name cfg_pretrain_encoder_original_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL1_lpn_var_kl0.0001_lpn_paper" arch.encoder_type=lpn_variational arch.encoder_num_layers=6 arch.loss.kl_weight=0.0001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_etrm_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL1_lpn_var_kl0.0001_lpn_paper" arch.encoder_type=lpn_variational arch.encoder_num_layers=6 arch.loss.kl_weight=0.0001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
 
 # VKL2: LPN_variational with kl_weight=0.001 (10x LPN value)
-[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder_original.py --config-name cfg_pretrain_encoder_original_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL2_lpn_var_kl0.001" arch.encoder_type=lpn_variational arch.encoder_num_layers=6 arch.loss.kl_weight=0.001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_etrm_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL2_lpn_var_kl0.001" arch.encoder_type=lpn_variational arch.encoder_num_layers=6 arch.loss.kl_weight=0.001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
 
 # VKL6: LPN_variational with kl_weight=0.00001 (10x smaller than LPN paper - test if stochasticity itself is the issue)
-[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder_original.py --config-name cfg_pretrain_encoder_original_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL6_lpn_var_kl1e-5" arch.encoder_type=lpn_variational arch.encoder_num_layers=6 arch.loss.kl_weight=0.00001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=10000
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_etrm_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL6_lpn_var_kl1e-5" arch.encoder_type=lpn_variational arch.encoder_num_layers=6 arch.loss.kl_weight=0.00001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=10000
 
 # =============================================================================
 # HYBRID VARIATIONAL: Test LPN paper KL weight
 # =============================================================================
 
 # VKL5: Hybrid_variational with kl_weight=0.0001 (LPN paper value)
-[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder_original.py --config-name cfg_pretrain_encoder_original_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL5_hybrid_var_kl0.0001_lpn_paper" arch.encoder_type=hybrid_variational arch.encoder_num_layers=4 arch.loss.kl_weight=0.0001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_etrm_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL5_hybrid_var_kl0.0001_lpn_paper" arch.encoder_type=hybrid_variational arch.encoder_num_layers=4 arch.loss.kl_weight=0.0001 global_batch_size=128 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
 
 # =============================================================================
 # CONTROL: Standard Encoder (kl_weight should be ignored)
 # =============================================================================
 
 # VKL0: Standard encoder with kl_weight=0 (baseline, should work same as before)
-[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_encoder_original.py --config-name cfg_pretrain_encoder_original_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL0_standard_control" arch.encoder_type=standard arch.encoder_num_layers=2 arch.loss.kl_weight=0.0 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
+[x] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_etrm_arc_agi_1 +project_name="variational-kl-fix" +run_name="VKL0_standard_control" arch.encoder_type=standard arch.encoder_num_layers=2 arch.loss.kl_weight=0.0 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000
 
 # =============================================================================
 # EXPECTED OUTCOMES

@@ -10,13 +10,13 @@
 
 We implemented two training modes for encoder-based TRM:
 
-### Online Learning Mode (`pretrain_encoder.py`)
+### Online Learning Mode (`pretrain_etrm.py`)
 - Multiple forward→backward→optim.step() per batch
 - Encoder re-encodes demos fresh each ACT step
 - Carry reset each batch
 - Fixed number of ACT steps per batch
 
-### Original TRM Mode (`pretrain_encoder_original.py`)
+### Original TRM Mode (`pretrain_etrm.py`)
 - ONE forward per batch (carry persists across batches)
 - Encoder called once when sample starts, context cached in carry
 - Dynamic halting with Q-head exploration during training
@@ -216,7 +216,7 @@ Best O?     Best L?
 
 ```bash
 # O1: Baseline
-torchrun --nproc-per-node 4 pretrain_encoder_original.py \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
     --config-name cfg_pretrain_encoder_original_arc_agi_1 \
     load_pretrained_decoder=/home/baris/repos/trm/checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_518071 \
     max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000 \
@@ -227,8 +227,8 @@ torchrun --nproc-per-node 4 pretrain_encoder_original.py \
 
 ```bash
 # L1: 4 ACT steps
-torchrun --nproc-per-node 4 pretrain_encoder.py \
-    --config-name cfg_pretrain_encoder_arc_agi_1 \
+torchrun --nproc-per-node 4 pretrain_etrm.py \
+    --config-name cfg_pretrain_etrm_arc_agi_1 \
     load_pretrained_decoder=/home/baris/repos/trm/checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_518071 \
     arch.num_act_steps=4 max_train_groups=32 max_eval_groups=32 epochs=20000 eval_interval=5000 \
     +project_name="mmi-714-act-mode" +run_name="L1_online_4steps"
