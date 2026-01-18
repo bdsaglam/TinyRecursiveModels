@@ -89,14 +89,23 @@ def load_config(config_name: str, overrides: list) -> Any:
     return cfg
 
 
-def create_dataloader(config: Any, rank: int, world_size: int, max_eval_groups: Optional[int]):
+def create_dataloader(config: Any, rank: int, world_size: int, max_eval_groups: Optional[int], batch_size: Optional[int] = None):
     """Create evaluation dataloader."""
     data_paths = config.data_paths_test if len(config.data_paths_test) > 0 else config.data_paths
+
+    # Use provided batch_size as per-GPU, or fall back to config
+    if batch_size is not None:
+        global_batch_size = batch_size * world_size
+    else:
+        global_batch_size = config.global_batch_size
 
     dataset = FewShotPuzzleDataset(
         FewShotPuzzleDatasetConfig(
             seed=config.seed,
             dataset_paths=data_paths,
+            global_batch_size=global_batch_size,
+            test_set_mode=True,
+            epochs_per_iter=1,
             rank=rank,
             num_replicas=world_size,
             max_demos=config.max_demos,
@@ -117,12 +126,15 @@ def create_dataloader(config: Any, rank: int, world_size: int, max_eval_groups: 
     return dataloader, dataset.metadata
 
 
-def create_model(config: Any, metadata: PuzzleDatasetMetadata, model_type: str, world_size: int):
+def create_model(config: Any, metadata: PuzzleDatasetMetadata, model_type: str, world_size: int, batch_size: Optional[int] = None):
     """Create model with loss head wrapper."""
+    # Use provided batch_size as per-GPU, or fall back to config
+    per_gpu_batch_size = batch_size if batch_size is not None else config.global_batch_size // world_size
+
     # Build model config
     model_cfg = dict(
         **config.arch.__pydantic_extra__,
-        batch_size=config.global_batch_size // world_size,
+        batch_size=per_gpu_batch_size,
         vocab_size=metadata.vocab_size,
         seq_len=metadata.seq_len,
         num_puzzle_identifiers=metadata.num_puzzle_identifiers,
@@ -245,11 +257,15 @@ def main():
         print(f"Checkpoint: {args.checkpoint}")
         print(f"Max eval groups: {args.max_eval_groups or 'all'}")
         print(f"World size: {world_size}")
+        if args.batch_size:
+            print(f"Batch size: {args.batch_size} (per-GPU)")
+        else:
+            print(f"Batch size: {config.global_batch_size // world_size} (per-GPU, from config)")
         print(f"{'=' * 60}\n")
 
     # Create eval dataloader
     eval_loader, eval_metadata = create_dataloader(
-        config, rank, world_size, args.max_eval_groups
+        config, rank, world_size, args.max_eval_groups, args.batch_size
     )
 
     if rank == 0:
@@ -261,7 +277,7 @@ def main():
         print()
 
     # Create model
-    model = create_model(config, eval_metadata, args.model_type, world_size)
+    model = create_model(config, eval_metadata, args.model_type, world_size, args.batch_size)
     model = model.cuda()
 
     # Load checkpoint

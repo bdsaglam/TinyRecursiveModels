@@ -112,7 +112,7 @@ echo "Model type:  $MODEL_TYPE"
 echo "Config:      $CONFIG_NAME"
 echo "Checkpoint:  $CHECKPOINT"
 echo "GPUs:        $NUM_GPUS"
-[ -n "$BATCH_SIZE" ] && echo "Batch size:  $BATCH_SIZE (global)"
+[ -n "$BATCH_SIZE" ] && echo "Batch size:  $BATCH_SIZE (per-GPU)"
 echo "=============================================="
 echo ""
 
@@ -126,9 +126,9 @@ CMD="torchrun --nproc-per-node $NUM_GPUS \
     --config-name $CONFIG_NAME \
     --model-type $MODEL_TYPE"
 
-# Add batch size if specified
+# Add batch size if specified (per-GPU batch size)
 if [ -n "$BATCH_SIZE" ]; then
-    CMD="$CMD --config-overrides global_batch_size=$BATCH_SIZE"
+    CMD="$CMD --batch-size $BATCH_SIZE"
 fi
 
 # Run evaluation with all GPUs
