@@ -39,8 +39,8 @@ def parse_args():
         help="Hydra config name (e.g., cfg_pretrain_etrm_arc_agi_1)"
     )
     parser.add_argument(
-        "--model-type", type=str, choices=["etrm", "etrmtrm"], default="etrm",
-        help="Model type: etrm or etrmtrm"
+        "--model-type", type=str, choices=["etrm", "etrmtrm"], default=None,
+        help="Model type: etrm or etrmtrm (auto-detected if not specified)"
     )
     parser.add_argument(
         "--min-batch", type=int, default=1,
@@ -74,6 +74,22 @@ def load_config(config_name: str, overrides: list) -> Any:
         cfg = compose(config_name=config_name, overrides=overrides)
 
     return cfg
+
+
+def infer_model_type(config: Any) -> str:
+    """Infer model type from config's arch parameters."""
+    arch_extra = config.arch.__pydantic_extra__
+
+    # ETRMTRM has recurrent_encoder_type in its arch config
+    if "recurrent_encoder_type" in arch_extra:
+        return "etrmtrm"
+
+    # Check arch name if available
+    arch_name = getattr(config.arch, "name", "")
+    if "etrmtrm" in arch_name.lower():
+        return "etrmtrm"
+
+    return "etrm"
 
 
 def create_model(config: Any, model_type: str, batch_size: int):
@@ -257,29 +273,33 @@ def main():
     gpu_name = torch.cuda.get_device_name(0)
     gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
 
+    # Load config first to infer model type
+    config = load_config(args.config_name, args.config_overrides)
+
+    # Infer model type if not specified
+    model_type = args.model_type or infer_model_type(config)
+    model_type_str = f"{model_type} (auto-detected)" if args.model_type is None else model_type
+
+    # Print key config values
+    encoder_type = config.arch.__pydantic_extra__.get("encoder_type", "standard")
+    encoder_layers = config.arch.__pydantic_extra__.get("encoder_num_layers", 2)
+
     print("=" * 60)
     print("Batch Size Finder")
     print("=" * 60)
     print(f"GPU: {gpu_name}")
     print(f"GPU Memory: {gpu_mem:.1f} GB")
     print(f"Config: {args.config_name}")
-    print(f"Model type: {args.model_type}")
-    print(f"Overrides: {args.config_overrides or 'none'}")
-    print("=" * 60)
-
-    # Load config
-    config = load_config(args.config_name, args.config_overrides)
-
-    # Print key config values
-    encoder_type = config.arch.__pydantic_extra__.get("encoder_type", "standard")
-    encoder_layers = config.arch.__pydantic_extra__.get("encoder_num_layers", 2)
+    print(f"Model type: {model_type_str}")
     print(f"Encoder type: {encoder_type}")
     print(f"Encoder layers: {encoder_layers}")
+    print(f"Overrides: {args.config_overrides or 'none'}")
+    print("=" * 60)
 
     # Binary search
     max_batch = binary_search_batch_size(
         config=config,
-        model_type=args.model_type,
+        model_type=model_type,
         min_batch=args.min_batch,
         max_batch=args.max_batch,
         forward_steps=args.forward_steps,
