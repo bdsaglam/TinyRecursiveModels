@@ -6,7 +6,7 @@ Usage:
     python find_batch_size.py --config-name cfg_pretrain_etrm_arc_agi_1
 
     # Find max batch size for ETRMTRM
-    python find_batch_size.py --config-name cfg_pretrain_etrmtrm_arc_agi_1 --model-type etrmtrm
+    python find_batch_size.py --config-name cfg_pretrain_etrmtrm_arc_agi_1
 
     # Custom range
     python find_batch_size.py --config-name cfg_pretrain_etrm_arc_agi_1 --min-batch 32 --max-batch 512
@@ -136,8 +136,8 @@ def create_model(config: Any, model_type: str, batch_size: int):
         from models.recursive_reasoning.etrm import TRMWithEncoder
         base_model = TRMWithEncoder(model_cfg)
     elif model_type == "etrmtrm":
-        from models.recursive_reasoning.etrmtrm import ETRMTRMModel
-        base_model = ETRMTRMModel(model_cfg)
+        from models.recursive_reasoning.etrmtrm import TRMWithRecurrentEncoder
+        base_model = TRMWithRecurrentEncoder(model_cfg)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
