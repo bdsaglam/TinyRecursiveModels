@@ -63,6 +63,10 @@ def parse_args():
         "--with-backward", action="store_true",
         help="Also test backward pass (more memory needed)"
     )
+    parser.add_argument(
+        "--gpu", type=int, default=0,
+        help="GPU index to use (default: 0)"
+    )
     return parser.parse_args()
 
 
@@ -283,9 +287,18 @@ def main():
         print("Error: CUDA not available")
         sys.exit(1)
 
+    # Check GPU index
+    num_gpus = torch.cuda.device_count()
+    if args.gpu >= num_gpus:
+        print(f"Error: GPU {args.gpu} not available (only {num_gpus} GPUs found)")
+        sys.exit(1)
+
+    # Set GPU device
+    torch.cuda.set_device(args.gpu)
+
     # GPU info
-    gpu_name = torch.cuda.get_device_name(0)
-    gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1e9
+    gpu_name = torch.cuda.get_device_name(args.gpu)
+    gpu_mem = torch.cuda.get_device_properties(args.gpu).total_memory / 1e9
 
     # Infer model type if not specified (from config name)
     model_type = args.model_type or infer_model_type(args.config_name)
@@ -302,7 +315,7 @@ def main():
     print("=" * 60)
     print("Batch Size Finder")
     print("=" * 60)
-    print(f"GPU: {gpu_name}")
+    print(f"GPU {args.gpu}: {gpu_name}")
     print(f"GPU Memory: {gpu_mem:.1f} GB")
     print(f"Config: {args.config_name}")
     print(f"Model type: {model_type_str}")
