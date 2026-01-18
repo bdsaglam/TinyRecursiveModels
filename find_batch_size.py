@@ -48,8 +48,8 @@ def parse_args():
         help="Minimum batch size to try (default: 1)"
     )
     parser.add_argument(
-        "--max-batch", type=int, default=2048,
-        help="Maximum batch size to try (default: 2048)"
+        "--max-batch", type=int, default=1024,
+        help="Maximum batch size to try (default: 1024)"
     )
     parser.add_argument(
         "--config-overrides", nargs="*", default=[],
