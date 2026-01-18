@@ -1,0 +1,2295 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Barış Sağlam" />
+  <title>ETRM: Encoder-Based Tiny Recursive Model for Few-Shot Abstract Reasoning</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      font-size: 11pt;
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    div.abstract {
+      margin: 2em 2em 2em 2em;
+      text-align: left;
+      font-size: 85%;
+    }
+    div.abstract-title {
+      font-weight: bold;
+      text-align: center;
+      padding: 0;
+      margin-bottom: 0.5em;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for citations */
+    div.csl-bib-body { }
+    div.csl-entry {
+      clear: both;
+      margin-bottom: 0em;
+    }
+    .hanging-indent div.csl-entry {
+      margin-left:2em;
+      text-indent:-2em;
+    }
+    div.csl-left-margin {
+      min-width:2em;
+      float:left;
+    }
+    div.csl-right-inline {
+      margin-left:2em;
+      padding-left:1em;
+    }
+    div.csl-indent {
+      margin-left: 2em;
+    }  </style>
+  
+  
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">ETRM: Encoder-Based Tiny Recursive Model for Few-Shot
+Abstract Reasoning</h1>
+<p class="author">Barış Sağlam</p>
+<p class="date">January 2026</p>
+<div class="abstract">
+<div class="abstract-title">Abstract</div>
+<p>The Tiny Recursive Model (TRM) achieves strong performance on ARC-AGI
+through recursive reasoning, but relies on learned puzzle-specific
+embeddings that limit generalization to unseen tasks. We present ETRM
+(Encoder-based TRM), which replaces this embedding lookup with a neural
+encoder that computes task representations directly from demonstration
+pairs. We systematically evaluate three encoder
+architectures—feedforward deterministic, cross-attention VAE, and
+iterative encoding—under strict train/evaluation separation where
+evaluation puzzles are never seen during training. All variants achieve
+moderate training accuracy (40-79%) but near-zero test accuracy
+(&lt;1%), revealing fundamental challenges in extracting transformation
+rules from demonstrations in a single forward pass. Our analysis
+identifies encoder collapse and the absence of task-specific feedback
+signals as key failure modes, suggesting that test-time optimization
+approaches like those used in Latent Program Networks may be necessary
+for true few-shot generalization.</p>
+</div>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#introduction" id="toc-introduction">1. Introduction</a>
+<ul>
+<li><a href="#problem-context" id="toc-problem-context">1.1 Problem
+Context</a></li>
+<li><a href="#the-hidden-problem" id="toc-the-hidden-problem">1.2 The
+Hidden Problem</a></li>
+<li><a href="#research-question" id="toc-research-question">1.3 Research
+Question</a></li>
+<li><a href="#contributions" id="toc-contributions">1.4
+Contributions</a></li>
+<li><a href="#key-findings" id="toc-key-findings">1.5 Key
+Findings</a></li>
+</ul></li>
+<li><a href="#background-and-related-work"
+id="toc-background-and-related-work">2. Background and Related Work</a>
+<ul>
+<li><a href="#the-arc-agi-benchmark" id="toc-the-arc-agi-benchmark">2.1
+The ARC-AGI Benchmark</a></li>
+<li><a href="#framing-arc-as-program-synthesis"
+id="toc-framing-arc-as-program-synthesis">2.2 Framing ARC as Program
+Synthesis</a></li>
+<li><a href="#overview-of-approaches-to-arc"
+id="toc-overview-of-approaches-to-arc">2.3 Overview of Approaches to
+ARC</a></li>
+<li><a href="#hierarchical-and-recursive-reasoning-models"
+id="toc-hierarchical-and-recursive-reasoning-models">2.4 Hierarchical
+and Recursive Reasoning Models</a>
+<ul>
+<li><a href="#hrm-hierarchical-reasoning-model"
+id="toc-hrm-hierarchical-reasoning-model">2.4.1 HRM: Hierarchical
+Reasoning Model</a></li>
+<li><a href="#trm-tiny-recursive-model"
+id="toc-trm-tiny-recursive-model">2.4.2 TRM: Tiny Recursive
+Model</a></li>
+<li><a href="#trm-as-a-refinement-loop"
+id="toc-trm-as-a-refinement-loop">2.4.3 TRM as a Refinement
+Loop</a></li>
+<li><a href="#the-memorization-problem"
+id="toc-the-memorization-problem">2.4.4 The Memorization
+Problem</a></li>
+</ul></li>
+<li><a href="#latent-program-networks"
+id="toc-latent-program-networks">2.5 Latent Program Networks</a></li>
+<li><a href="#positioning-our-work-etrm"
+id="toc-positioning-our-work-etrm">2.6 Positioning Our Work:
+ETRM</a></li>
+</ul></li>
+<li><a href="#method" id="toc-method">3. Method</a>
+<ul>
+<li><a href="#overview-from-memorization-to-generalization"
+id="toc-overview-from-memorization-to-generalization">3.1 Overview: From
+Memorization to Generalization</a></li>
+<li><a href="#background-trm-architecture"
+id="toc-background-trm-architecture">3.2 Background: TRM
+Architecture</a>
+<ul>
+<li><a href="#task-context-via-puzzle-embedding-lookup"
+id="toc-task-context-via-puzzle-embedding-lookup">3.2.1 Task Context via
+Puzzle Embedding Lookup</a></li>
+<li><a href="#dual-state-recursive-reasoning"
+id="toc-dual-state-recursive-reasoning">3.2.2 Dual-State Recursive
+Reasoning</a></li>
+<li><a href="#deep-supervision-with-adaptive-computation"
+id="toc-deep-supervision-with-adaptive-computation">3.2.3 Deep
+Supervision with Adaptive Computation</a></li>
+</ul></li>
+<li><a href="#encoder-architectures" id="toc-encoder-architectures">3.3
+Encoder Architectures</a>
+<ul>
+<li><a href="#feedforward-deterministic-encoder"
+id="toc-feedforward-deterministic-encoder">3.3.1 Feedforward
+Deterministic Encoder</a></li>
+<li><a href="#feedforward-variational-encoder"
+id="toc-feedforward-variational-encoder">3.3.2 Feedforward Variational
+Encoder</a></li>
+<li><a href="#iterative-encoder-joint-encoder-decoder-refinement"
+id="toc-iterative-encoder-joint-encoder-decoder-refinement">3.3.3
+Iterative Encoder (Joint Encoder-Decoder Refinement)</a></li>
+</ul></li>
+<li><a href="#integration-with-trm-decoder"
+id="toc-integration-with-trm-decoder">3.4 Integration with TRM
+Decoder</a></li>
+<li><a href="#training-protocol" id="toc-training-protocol">3.5 Training
+Protocol</a>
+<ul>
+<li><a href="#strict-trainevaluation-separation"
+id="toc-strict-trainevaluation-separation">3.5.1 Strict Train/Evaluation
+Separation</a></li>
+<li><a href="#data-augmentation" id="toc-data-augmentation">3.5.2 Data
+Augmentation</a></li>
+<li><a href="#encoder-re-encoding-solving-gradient-starvation"
+id="toc-encoder-re-encoding-solving-gradient-starvation">3.5.3 Encoder
+Re-encoding: Solving Gradient Starvation</a></li>
+<li><a href="#pretrained-decoder-initialization"
+id="toc-pretrained-decoder-initialization">3.5.4 Pretrained Decoder
+Initialization</a></li>
+<li><a href="#variational-training" id="toc-variational-training">3.5.5
+Variational Training</a></li>
+</ul></li>
+<li><a href="#design-space-summary" id="toc-design-space-summary">3.6
+Design Space Summary</a></li>
+</ul></li>
+<li><a href="#experiments" id="toc-experiments">4. Experiments</a>
+<ul>
+<li><a href="#experimental-setup" id="toc-experimental-setup">4.1
+Experimental Setup</a>
+<ul>
+<li><a href="#dataset" id="toc-dataset">4.1.1 Dataset</a></li>
+<li><a href="#evaluation-protocol" id="toc-evaluation-protocol">4.1.2
+Evaluation Protocol</a></li>
+<li><a href="#training-configuration"
+id="toc-training-configuration">4.1.3 Training Configuration</a></li>
+<li><a href="#computational-resources"
+id="toc-computational-resources">4.1.4 Computational Resources</a></li>
+</ul></li>
+<li><a href="#trm-baseline" id="toc-trm-baseline">4.2 TRM
+Baseline</a></li>
+<li><a href="#etrm-results" id="toc-etrm-results">4.3 ETRM
+Results</a></li>
+<li><a href="#analysis" id="toc-analysis">4.4 Analysis</a>
+<ul>
+<li><a href="#training-dynamics" id="toc-training-dynamics">4.4.1
+Training Dynamics</a></li>
+<li><a href="#encoder-collapse" id="toc-encoder-collapse">4.4.2 Encoder
+Collapse</a></li>
+<li><a href="#qualitative-examples" id="toc-qualitative-examples">4.4.3
+Qualitative Examples</a></li>
+<li><a href="#key-findings-1" id="toc-key-findings-1">4.4.4 Key
+Findings</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#discussion" id="toc-discussion">5. Discussion</a>
+<ul>
+<li><a href="#analysis-of-results" id="toc-analysis-of-results">5.1
+Analysis of Results</a>
+<ul>
+<li><a href="#the-generalization-gap"
+id="toc-the-generalization-gap">5.1.1 The Generalization Gap</a></li>
+<li><a href="#the-asymmetry-between-trm-and-etrm"
+id="toc-the-asymmetry-between-trm-and-etrm">5.1.2 The Asymmetry Between
+TRM and ETRM</a></li>
+<li><a href="#evidence-from-cross-sample-variance"
+id="toc-evidence-from-cross-sample-variance">5.1.3 Evidence from
+Cross-Sample Variance</a></li>
+<li><a href="#did-variational-encoding-help"
+id="toc-did-variational-encoding-help">5.1.4 Did Variational Encoding
+Help?</a></li>
+<li><a href="#qualitative-failure-modes"
+id="toc-qualitative-failure-modes">5.1.5 Qualitative Failure
+Modes</a></li>
+<li><a href="#context-for-comparison-with-trm"
+id="toc-context-for-comparison-with-trm">5.1.6 Context for Comparison
+with TRM</a></li>
+</ul></li>
+<li><a href="#challenges-encountered-and-solutions"
+id="toc-challenges-encountered-and-solutions">5.2 Challenges Encountered
+and Solutions</a>
+<ul>
+<li><a href="#gradient-starvation" id="toc-gradient-starvation">5.2.1
+Gradient Starvation</a></li>
+<li><a href="#training-stability" id="toc-training-stability">5.2.2
+Training Stability</a></li>
+<li><a href="#monitoring-representation-quality"
+id="toc-monitoring-representation-quality">5.2.3 Monitoring
+Representation Quality</a></li>
+</ul></li>
+<li><a href="#limitations" id="toc-limitations">5.3 Limitations</a>
+<ul>
+<li><a href="#computational-constraints"
+id="toc-computational-constraints">5.3.1 Computational
+Constraints</a></li>
+<li><a href="#architecture-exploration"
+id="toc-architecture-exploration">5.3.2 Architecture
+Exploration</a></li>
+<li><a href="#implementation-caveats"
+id="toc-implementation-caveats">5.3.3 Implementation Caveats</a></li>
+</ul></li>
+<li><a href="#future-directions" id="toc-future-directions">5.4 Future
+Directions</a>
+<ul>
+<li><a href="#self-supervised-test-time-search-most-promising"
+id="toc-self-supervised-test-time-search-most-promising">5.4.1
+Self-Supervised Test-Time Search (Most Promising)</a></li>
+<li><a href="#contrastive-learning-for-encoder"
+id="toc-contrastive-learning-for-encoder">5.4.2 Contrastive Learning for
+Encoder</a></li>
+<li><a href="#proper-initialization"
+id="toc-proper-initialization">5.4.3 Proper Initialization</a></li>
+</ul></li>
+<li><a href="#conclusions" id="toc-conclusions">5.5 Conclusions</a></li>
+</ul></li>
+<li><a href="#references" id="toc-references">References</a></li>
+</ul>
+</nav>
+<h1 id="introduction">1. Introduction</h1>
+<h2 id="problem-context">1.1 Problem Context</h2>
+<p>The Abstraction and Reasoning Corpus (ARC-AGI) benchmark <span
+class="citation" data-cites="chollet2019"><a href="#ref-chollet2019"
+role="doc-biblioref">[1]</a></span> was designed to test abstract
+reasoning and few-shot learning capabilities. Each task presents 2-5
+demonstration pairs showing an input-output transformation, followed by
+test inputs where the model must infer and apply the same
+transformation. This format explicitly tests whether systems can extract
+transformation rules from examples and generalize to new inputs.</p>
+<p>Recent work has achieved surprising success on this benchmark. The
+Tiny Recursive Model (TRM) <span class="citation" data-cites="trm"><a
+href="#ref-trm" role="doc-biblioref">[2]</a></span> achieves 45%
+accuracy on ARC-AGI-1 with only 7 million parameters, outperforming much
+larger models including GPT-4. TRM’s key innovation is recursive
+reasoning: it iteratively refines predictions through nested loops with
+deep supervision at each step.</p>
+<h2 id="the-hidden-problem">1.2 The Hidden Problem</h2>
+<p>Analysis by the ARC Prize Foundation <span class="citation"
+data-cites="hrm-analysis"><a href="#ref-hrm-analysis"
+role="doc-biblioref">[3]</a></span> and subsequent work revealed a
+critical limitation in TRM’s approach. TRM uses puzzle_id embeddings:
+each task is assigned a unique learned vector that conditions the
+model’s predictions. During inference, the model receives only the input
+grid and this puzzle_id—it never actually processes the demonstration
+pairs to extract transformation rules.</p>
+<p>This means transformation rules are memorized in embedding weights
+during training, not inferred from demonstrations at test time. The
+evidence is compelling: when researchers trained the related HRM model
+only on the 400 evaluation tasks <span class="citation"
+data-cites="hrm-analysis"><a href="#ref-hrm-analysis"
+role="doc-biblioref">[3]</a></span>, performance dropped from 41% to
+just 31%—still remarkably high for a model that has only seen those
+specific tasks. Furthermore, replacing puzzle_id with a random token
+results in 0% accuracy <span class="citation"
+data-cites="trm-inductive"><a href="#ref-trm-inductive"
+role="doc-biblioref">[4]</a></span>. The model cannot function without
+task-specific embeddings it has already learned.</p>
+<h2 id="research-question">1.3 Research Question</h2>
+<p>This project asks: <strong>Can we replace task-specific embeddings
+with an encoder that extracts transformation rules directly from
+demonstration pairs at test time?</strong> Such an approach would enable
+true few-shot generalization to novel tasks never seen during
+training—the original intent of the ARC benchmark. The architectural
+comparison between TRM’s embedding-based approach and our encoder-based
+approach is illustrated in Section 3.</p>
+<h2 id="contributions">1.4 Contributions</h2>
+<p>We present ETRM (Encoder-based TRM), an architecture that replaces
+TRM’s puzzle_id lookup with a neural encoder that processes
+demonstration pairs:</p>
+<ol type="1">
+<li><p><strong>Encoder-based architecture</strong>: We design and
+implement ETRM, which computes task representations from demonstrations
+rather than retrieving memorized embeddings.</p></li>
+<li><p><strong>Systematic evaluation of encoder designs</strong>: We
+evaluate three encoder paradigms—deterministic transformers, variational
+encoders, and iterative encoding with adaptive computation—to understand
+what architectural choices matter.</p></li>
+<li><p><strong>Strict train/eval separation</strong>: We implement a
+protocol where evaluation puzzles and their demonstrations are never
+seen during training, enabling measurement of true
+generalization.</p></li>
+<li><p><strong>Analysis of failure modes</strong>: We identify and
+analyze why encoder-based approaches struggle, including gradient
+starvation during training and the fundamental asymmetry between
+learning embeddings over many gradient updates versus extracting rules
+in a single forward pass.</p></li>
+</ol>
+<h2 id="key-findings">1.5 Key Findings</h2>
+<p>Our results are primarily negative but informative:</p>
+<ul>
+<li>All ETRM variants achieve moderate-to-high training accuracy
+(40-79%) but near-zero test accuracy (&lt;1%) on held-out puzzles.</li>
+<li>The deterministic encoder shows low cross-sample variance
+(0.15-0.36), suggesting the decoder learns to ignore uninformative
+encoder outputs and instead memorizes training patterns.</li>
+<li>Variational encoding increases representation diversity (~10x higher
+variance) but does not improve generalization—variance alone is
+insufficient.</li>
+<li>Iterative encoding (ETRM-TRM) also fails, indicating the problem is
+not simply insufficient computation but the absence of a feedback signal
+during refinement.</li>
+</ul>
+<p>These results highlight a fundamental asymmetry: TRM refines each
+puzzle embedding over hundreds of thousands of gradient updates during
+training, while we ask the encoder to extract equivalent information in
+a single forward pass with no task-specific supervision. The most
+promising path forward appears to be adding test-time optimization with
+self-supervised signals, as demonstrated by Latent Program Networks
+<span class="citation" data-cites="lpn"><a href="#ref-lpn"
+role="doc-biblioref">[5]</a></span>.</p>
+<h1 id="background-and-related-work">2. Background and Related Work</h1>
+<h2 id="the-arc-agi-benchmark">2.1 The ARC-AGI Benchmark</h2>
+<p>The Abstraction and Reasoning Corpus (ARC) was introduced by Chollet
+<span class="citation" data-cites="chollet2019"><a
+href="#ref-chollet2019" role="doc-biblioref">[1]</a></span> as a
+benchmark designed to measure abstract reasoning and skill acquisition
+efficiency in AI systems. Unlike most machine learning benchmarks that
+test interpolation within a training distribution, ARC explicitly
+requires out-of-distribution generalization: the hidden test set
+contains tasks that follow different underlying rules than those seen
+during training.</p>
+<p>Each ARC task consists of 2-5 demonstration pairs showing an input
+grid and its corresponding output grid, followed by 1-2 test inputs for
+which the system must predict the output. Grids can be up to 30×30
+cells, with each cell containing one of 10 possible values (typically
+rendered as colors). The demonstration pairs implicitly specify a
+transformation rule, and the challenge is to infer this rule and apply
+it correctly to novel test inputs. Figure 1 shows an example task where
+the rule involves extracting and recoloring a shape.</p>
+<p><img src="assets/arc-puzzles.png"
+alt="Figure 1: Example ARC puzzles" /> <strong>Figure 1: Example ARC
+puzzles.</strong> Each task shows 2-5 demonstration pairs and test
+inputs requiring the model to infer and apply the transformation
+rule.</p>
+<p>What makes ARC particularly challenging is twofold. First, every task
+follows a different underlying logic—there is no single algorithm that
+solves all tasks. Second, compute efficiency is an explicit goal:
+competition submissions must operate within fixed hardware constraints
+and capped time budgets, preventing brute-force scaling as a solution
+strategy. Chollet posits that solving ARC requires only “core knowledge
+priors” that humans possess innately: objectness and elementary physics
+(cohesion, persistence), goal-directedness, basic numerics, and
+elementary geometry and topology <span class="citation"
+data-cites="chollet2019"><a href="#ref-chollet2019"
+role="doc-biblioref">[1]</a></span>.</p>
+<h2 id="framing-arc-as-program-synthesis">2.2 Framing ARC as Program
+Synthesis</h2>
+<p>A productive way to understand ARC is through the lens of program
+synthesis: given demonstration input-output pairs, find the shortest
+program P such that P(input) = output for all demonstrations <span
+class="citation" data-cites="induction-transduction"><a
+href="#ref-induction-transduction" role="doc-biblioref">[6]</a></span>.
+This framing unifies seemingly disparate approaches under a common
+conceptual lens and clarifies their trade-offs.</p>
+<p>Li et al. <span class="citation"
+data-cites="induction-transduction"><a
+href="#ref-induction-transduction" role="doc-biblioref">[6]</a></span>
+and Hemens <span class="citation" data-cites="hemens-taxonomy"><a
+href="#ref-hemens-taxonomy" role="doc-biblioref">[7]</a></span> organize
+ARC approaches along three orthogonal axes, drawing on foundational work
+in neurosymbolic programming <span class="citation"
+data-cites="neurosymbolic"><a href="#ref-neurosymbolic"
+role="doc-biblioref">[8]</a></span>.</p>
+<p><strong>Inference Mode: Induction vs Transduction.</strong> Inductive
+approaches first infer an explicit program or rule from the
+demonstrations, then execute that program on test inputs. This produces
+interpretable explanations but requires successful program search.
+Examples include DSL-based synthesis and LLM code generation.
+Transductive approaches instead directly predict the test output from
+demonstrations and test input combined, without constructing an explicit
+intermediate program. The transformation rule remains implicit in
+network activations. Li et al. <span class="citation"
+data-cites="induction-transduction"><a
+href="#ref-induction-transduction" role="doc-biblioref">[6]</a></span>
+show these approaches exhibit a “skill split”: induction excels at
+counting, arithmetic, and long-horizon logic, while transduction handles
+noisy inputs, gestalt perception, and topological reasoning more
+effectively. This complementarity explains why top-performing systems
+ensemble both strategies.</p>
+<p><strong>Program Representation: Discrete vs Continuous.</strong>
+Discrete representations (DSL primitives, Python code) offer perfect
+precision, natural compositionality, and interpretability, but are
+non-differentiable and face combinatorial search spaces. Continuous
+representations (neural network weights, latent vectors, learned
+embeddings) enable gradient-based optimization but sacrifice precision
+guarantees and make completeness difficult to verify <span
+class="citation" data-cites="neurosymbolic"><a href="#ref-neurosymbolic"
+role="doc-biblioref">[8]</a></span>.</p>
+<p><strong>Program Search: Heuristic vs Learned.</strong> Hand-crafted
+heuristics (brute-force enumeration, minimum description length
+criteria) are efficient when well-engineered but limited in scope.
+Gradient-based search (SGD on weights, gradient ascent in latent spaces)
+leverages differentiability but can get stuck in local optima. Learned
+search (thinking models, recursive refinement) represents the most
+powerful paradigm, where the search procedure itself is learned from
+data <span class="citation" data-cites="hemens-taxonomy"><a
+href="#ref-hemens-taxonomy" role="doc-biblioref">[7]</a></span>.</p>
+<p>Our work, ETRM, occupies a specific position in this taxonomy: it is
+a transductive approach using continuous representation (encoder-derived
+latent vectors) with learned search (TRM’s recursive decoder).</p>
+<h2 id="overview-of-approaches-to-arc">2.3 Overview of Approaches to
+ARC</h2>
+<p>Table 1 summarizes major approaches to ARC organized by their
+position in the taxonomy.</p>
+<p>[Table 1: Taxonomy of ARC approaches by program representation and
+search strategy]</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 45%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Program Representation</th>
+<th>Program Search</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DSL search (Icecuber)</td>
+<td>Discrete (custom DSL)</td>
+<td>Hand-crafted heuristics</td>
+</tr>
+<tr>
+<td>LLM program synthesis</td>
+<td>Discrete (Python)</td>
+<td>LLM sampling + refinement</td>
+</tr>
+<tr>
+<td>LLM + TTT (ARChitects, NVARC)</td>
+<td>Neural (weights + prompt)</td>
+<td>Gradient-based (SGD)</td>
+</tr>
+<tr>
+<td>Latent Program Networks</td>
+<td>Neural (latent vector)</td>
+<td>Gradient-based (test-time)</td>
+</tr>
+<tr>
+<td>TRM/HRM</td>
+<td>Neural (puzzle embedding)</td>
+<td>Learned (recursive decoder)</td>
+</tr>
+<tr>
+<td>Thinking models</td>
+<td>Neural (weights + thinking tokens)</td>
+<td>Learned (implicit search)</td>
+</tr>
+</tbody>
+</table>
+<p>Several key observations emerged from ARC Prize 2024-2025 <span
+class="citation" data-cites="arc-prize-2024 arc-prize-2025"><a
+href="#ref-arc-prize-2024" role="doc-biblioref">[9]</a>, <a
+href="#ref-arc-prize-2025" role="doc-biblioref">[10]</a></span>.
+Test-time adaptation proved crucial for generalization—the ARC Prize
+2024 Technical Report notes that no static-inference transduction
+solution exceeds 11% accuracy, while test-time training approaches reach
+55%+. Refinement loops emerged as the central theme in 2025: iteratively
+improving programs or outputs based on feedback signals. Ensembling
+transductive and inductive methods remains essential for top
+performance, and data augmentation with voting is universally
+employed.</p>
+<p>As of January 2026, the ARC-AGI-2 leaderboard shows frontier LLMs
+with extended thinking achieving 45-54% (GPT-5.2 Pro, Gemini 3 Deep
+Think), while the Kaggle competition winner NVARC achieved 24% at
+$0.20/task by combining test-time training with TRM components. TRM
+alone reaches approximately 6% on ARC-AGI-2 and 40% on ARC-AGI-1. Humans
+achieve 100% on ARC-AGI-2.</p>
+<h2 id="hierarchical-and-recursive-reasoning-models">2.4 Hierarchical
+and Recursive Reasoning Models</h2>
+<h3 id="hrm-hierarchical-reasoning-model">2.4.1 HRM: Hierarchical
+Reasoning Model</h3>
+<p>Wang et al. <span class="citation" data-cites="hrm"><a
+href="#ref-hrm" role="doc-biblioref">[11]</a></span> introduced HRM, a
+brain-inspired architecture with two coupled recurrent modules operating
+at different timescales. The high-level module reasons about abstract
+structure and strategy, while the low-level module executes pixel-level
+transformations. The key innovation is hierarchical convergence: the
+fast low-level module repeatedly converges within cycles, then gets
+reset by slow high-level updates. This achieves effective computational
+depth of N×T steps while maintaining training stability. HRM achieved
+40.3% on ARC-AGI-1 with only 27M parameters trained on approximately
+1000 examples.</p>
+<h3 id="trm-tiny-recursive-model">2.4.2 TRM: Tiny Recursive Model</h3>
+<p>Jolicoeur-Martineau <span class="citation" data-cites="trm"><a
+href="#ref-trm" role="doc-biblioref">[2]</a></span> simplified HRM
+dramatically with the Tiny Recursive Model (TRM), which won 1st Place
+Paper Award at ARC Prize 2025. TRM replaces HRM’s two 4-layer networks
+with a single 2-layer network containing only 7M parameters, achieving
+45% on ARC-AGI-1 and 8% on ARC-AGI-2.</p>
+<p>TRM’s core mechanism involves recursive reasoning through nested
+loops. The model maintains two states: y (current predicted solution)
+and z (latent reasoning features). For each supervision step, TRM
+recursively updates z given the input, current answer, and current
+latent (n=6 times), then updates y given y and z. Deep supervision
+applies loss at every recursion step, allowing the model to
+progressively improve its answer.</p>
+<p>Critically, TRM conditions on tasks through a puzzle_id embedding
+mechanism. Each puzzle (at each augmentation) receives a unique
+identifier mapped to a learned embedding vector. This embedding is added
+to the input representation and guides the transformation. The embedding
+matrix includes both training and evaluation puzzles, with gradients
+flowing through evaluation puzzle embeddings during training.</p>
+<h3 id="trm-as-a-refinement-loop">2.4.3 TRM as a Refinement Loop</h3>
+<p>The ARC Prize 2025 analysis identified refinement loops as the
+central theme driving progress: “At its core, a refinement loop
+iteratively transforms one program into another, where the objective is
+to incrementally optimize a program towards a goal based on a feedback
+signal” <span class="citation" data-cites="arc-prize-2025"><a
+href="#ref-arc-prize-2025" role="doc-biblioref">[10]</a></span>. TRM
+exemplifies this paradigm—it recursively refines its predicted output
+over up to 16 steps, with deep supervision providing feedback at each
+step.</p>
+<h3 id="the-memorization-problem">2.4.4 The Memorization Problem</h3>
+<p>Analysis papers have revealed a critical limitation of TRM/HRM. When
+puzzle_id embeddings are replaced with blank or random tokens, accuracy
+drops to 0%—the model cannot function without task-specific embeddings
+<span class="citation" data-cites="trm-inductive"><a
+href="#ref-trm-inductive" role="doc-biblioref">[4]</a></span>.
+Furthermore, analysis shows that “cross-task transfer learning has
+limited benefits” and “most performance comes from memorizing solutions
+to specific tasks” <span class="citation" data-cites="arc-prize-2025"><a
+href="#ref-arc-prize-2025" role="doc-biblioref">[10]</a></span>. HRM
+trained only on evaluation tasks still achieves approximately 31%,
+suggesting the model memorizes task-to-transformation mappings rather
+than learning general reasoning.</p>
+<p>Test-time augmentation contributes significantly: approximately 11%
+of performance comes from generating 1000 augmented samples and voting
+on the most common answer. The implication is clear: while TRM/HRM
+achieve strong results, they deviate from ARC’s intended few-shot
+paradigm by memorizing task mappings rather than extracting rules from
+demonstrations.</p>
+<p>This limitation becomes acute at scale. NVARC, the 1st place solution
+in ARC Prize 2025, explicitly notes that TRM’s puzzle embedding table
+requires 51 billion parameters for 100k puzzles with 1000 augmentations
+each—far exceeding practical memory constraints <span class="citation"
+data-cites="nvarc"><a href="#ref-nvarc"
+role="doc-biblioref">[12]</a></span>. They were forced to reduce to 3k
+puzzles with 256 augmentations, fundamentally limiting what TRM could
+learn from their 103k synthetic puzzle dataset.</p>
+<h2 id="latent-program-networks">2.5 Latent Program Networks</h2>
+<p>Bonnet et al. <span class="citation" data-cites="lpn"><a
+href="#ref-lpn" role="doc-biblioref">[5]</a></span> introduced Latent
+Program Networks (LPN), the approach most conceptually related to our
+encoder-based method. LPN learns a continuous latent space of implicit
+programs through an encoder-decoder architecture. The encoder (a small
+transformer) maps demonstration input-output pairs to a latent program
+vector of dimension 256. The decoder acts as a neural executor,
+generating output grids given a latent program and test input.</p>
+<p>The key innovation is test-time gradient search. Starting from the
+encoder’s initial estimate, LPN performs gradient ascent in latent space
+to find programs that better explain the demonstrations. Using
+leave-one-out loss on demo pairs as a signal, this search doubles
+out-of-distribution performance (7.75% to 15.5% on ARC-AGI-1
+evaluation). LPN achieves 9.5% on the evaluation set with a 178M
+parameter model trained from scratch on synthetic data.</p>
+<p>LPN demonstrates that encoding demonstrations into latent
+representations enables generalization to unseen tasks—but at the cost
+of expensive test-time optimization.</p>
+<h2 id="positioning-our-work-etrm">2.6 Positioning Our Work: ETRM</h2>
+<p>TRM, LPN, and our approach share a fundamental design choice: all
+three represent programs as continuous vectors rather than discrete
+symbolic structures. This places them in the same region of the taxonomy
+(Section 2.2)—continuous representation with transductive inference.
+Where they differ is in how they obtain this representation and how they
+search over it.</p>
+<p><strong>How the program representation is obtained:</strong> -
+<strong>TRM</strong>: Learned embedding lookup. Each puzzle receives a
+unique identifier mapped to a learned vector. This requires storing
+embeddings for all puzzles seen during training, leading to the 51B
+parameter scaling problem. - <strong>LPN</strong>: Encoder output. A
+transformer encoder processes demonstration pairs and produces a latent
+program vector. This enables generalization to unseen puzzles but
+requires gradient-based refinement at test time. -
+<strong>ETRM</strong>: Encoder output. Like LPN, we compute
+representations from demonstrations rather than looking them up—but we
+use this representation directly without test-time optimization.</p>
+<p><strong>How the program space is searched:</strong> -
+<strong>TRM</strong>: Learned/implicit search via recursive decoder. The
+decoder iteratively refines its prediction through nested reasoning
+loops, with deep supervision guiding the search. - <strong>LPN</strong>:
+Gradient-based search. Starting from the encoder’s estimate, gradient
+ascent in latent space finds programs that better explain the
+demonstrations. - <strong>ETRM</strong>: Learned/implicit search via
+recursive decoder (inherited from TRM). We adopt TRM’s recursive
+reasoning mechanism, avoiding expensive test-time gradient
+computation.</p>
+<p>Table 2 summarizes these distinctions.</p>
+<p>[Table 2: Comparison of TRM, LPN, and ETRM along taxonomy axes]</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 41%" />
+</colgroup>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>TRM</th>
+<th>LPN</th>
+<th>ETRM (Ours)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Program representation</td>
+<td>Continuous (embedding)</td>
+<td>Continuous (latent vector)</td>
+<td>Continuous (latent vector)</td>
+</tr>
+<tr>
+<td>How obtained</td>
+<td>Learned lookup</td>
+<td>Encoder</td>
+<td>Encoder</td>
+</tr>
+<tr>
+<td>Program search</td>
+<td>Learned (recursive decoder)</td>
+<td>Gradient-based</td>
+<td>Learned (recursive decoder)</td>
+</tr>
+<tr>
+<td>Processes demos at test time</td>
+<td>No</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Test-time optimization</td>
+<td>No</td>
+<td>Yes (gradient ascent)</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Can generalize to unseen tasks</td>
+<td>No</td>
+<td>Yes</td>
+<td>Yes (goal)</td>
+</tr>
+</tbody>
+</table>
+<p>ETRM thus combines the strengths of both approaches: LPN’s ability to
+compute task representations from demonstrations (enabling
+generalization) with TRM’s efficient recursive search (avoiding
+test-time optimization). As shown in Figures 2-3, ETRM replaces TRM’s
+puzzle_id embedding lookup with an encoder that processes demonstration
+pairs, enabling true few-shot generalization to puzzles never seen
+during training.</p>
+<h1 id="method">3. Method</h1>
+<h2 id="overview-from-memorization-to-generalization">3.1 Overview: From
+Memorization to Generalization</h2>
+<p>The Tiny Recursive Model (TRM) <span class="citation"
+data-cites="trm"><a href="#ref-trm" role="doc-biblioref">[2]</a></span>
+achieves strong performance on ARC-AGI through recursive reasoning with
+deep supervision. However, TRM relies on a learned embedding matrix that
+maps puzzle identifiers to task-specific representations. Critically,
+this embedding matrix includes entries for <em>both</em> training and
+evaluation puzzles—their embeddings receive gradient updates during
+training even though their test queries are held out. This design choice
+means TRM cannot solve puzzles without corresponding embeddings,
+fundamentally limiting it to interpolation rather than true
+generalization.</p>
+<p>We propose <strong>Encoder-based TRM (ETRM)</strong>, which replaces
+the embedding lookup with a neural encoder that computes task
+representations from demonstration input-output pairs at inference time.
+This simple modification transforms TRM from a memorization-based system
+into one capable of true few-shot learning:</p>
+<p><span class="math display">$$
+\begin{aligned}
+\text{TRM:} \quad &amp; \mathbf{c} =
+\text{EmbeddingMatrix}[\text{puzzle\_id}] \\
+\text{ETRM:} \quad &amp; \mathbf{c} =
+\text{Encoder}(\{(\mathbf{x}_i^{\text{in}},
+\mathbf{x}_i^{\text{out}})\}_{i=1}^K)
+\end{aligned}
+$$</span></p>
+<p>where <span
+class="math inline"><strong>c</strong> ∈ ℝ<sup><em>T</em> × <em>D</em></sup></span>
+is the task context (<span class="math inline"><em>T</em> = 16</span>
+tokens, <span class="math inline"><em>D</em> = 512</span> dimensions),
+and <span class="math inline"><em>K</em></span> is the number of
+demonstration input-output pairs. The encoder learns to extract
+transformation rules from demonstrations, enabling generalization to any
+puzzle—including those never seen during training.</p>
+<p>Our key design principle is to preserve TRM’s decoder architecture
+unchanged <span class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span>. The recursive reasoning mechanism
+and deep supervision that make TRM effective are retained; we only
+modify how task context is obtained.</p>
+<h2 id="background-trm-architecture">3.2 Background: TRM
+Architecture</h2>
+<p>Before describing our encoder designs, we briefly review TRM’s
+architecture and its fundamental limitation.</p>
+<h3 id="task-context-via-puzzle-embedding-lookup">3.2.1 Task Context via
+Puzzle Embedding Lookup</h3>
+<p>TRM obtains task context through a learned embedding matrix indexed
+by puzzle identifier:</p>
+<pre><code># TRM: Task context from embedding lookup
+def trm_get_context(puzzle_id):
+    # puzzle_emb: learned matrix of shape (num_puzzles, T, D)
+    # Includes entries for ALL puzzles (training AND evaluation)
+    return puzzle_emb[puzzle_id]  # Returns (T, D) context</code></pre>
+<figure>
+<img src="assets/trm.png" alt="TRM Architecture" />
+<figcaption aria-hidden="true">TRM Architecture</figcaption>
+</figure>
+<p><strong>Figure 2: TRM Architecture.</strong> Task context is obtained
+via embedding matrix lookup indexed by puzzle ID. The embedding matrix
+includes entries for both training and evaluation puzzles, limiting the
+model to interpolation rather than true generalization.</p>
+<p><strong>Critical limitation</strong>: The embedding matrix must
+contain an entry for every puzzle the model will encounter. Since
+evaluation puzzle IDs are included in the matrix and receive gradient
+updates during training, TRM cannot generalize to truly unseen
+puzzles—it can only interpolate among puzzles in its embedding
+matrix.</p>
+<h3 id="dual-state-recursive-reasoning">3.2.2 Dual-State Recursive
+Reasoning</h3>
+<p>Given the task context, TRM maintains two latent states that are
+iteratively refined: - <span
+class="math inline"><strong>y</strong></span>: The current predicted
+solution (embedded) - <span
+class="math inline"><strong>z</strong></span>: A latent reasoning
+state</p>
+<pre><code>def trm_forward(x, puzzle_id, y, z, H_cycles=3, L_cycles=6):
+    # Get task context via embedding lookup (not from demos!)
+    c = puzzle_emb[puzzle_id]         # &lt;-- The limitation
+
+    input_emb = embed(x) + c          # Add task context to input
+
+    for h in range(H_cycles):
+        for l in range(L_cycles):
+            z = f_θ(z, y + input_emb)  # Refine reasoning
+        y = f_θ(y, z)                   # Update solution
+
+    return y, z</code></pre>
+<p>The network <span
+class="math inline"><em>f</em><sub><em>θ</em></sub></span> is a small
+2-layer transformer <span class="citation" data-cites="transformer"><a
+href="#ref-transformer" role="doc-biblioref">[13]</a></span>. Despite
+its simplicity, the recursive application creates an effective depth of
+<span class="math inline"><em>H</em> × (<em>L</em> + 1) × 2 = 42</span>
+layers.</p>
+<h3 id="deep-supervision-with-adaptive-computation">3.2.3 Deep
+Supervision with Adaptive Computation</h3>
+<p>TRM uses deep supervision: the carry state <span
+class="math inline">(<strong>y</strong>, <strong>z</strong>)</span>
+persists across training steps, with each step providing supervision. A
+Q-head learns when to halt, implementing Adaptive Computation Time (ACT)
+<span class="citation" data-cites="act"><a href="#ref-act"
+role="doc-biblioref">[14]</a></span>. During training, an exploration
+probability <span
+class="math inline"><em>p</em><sub>explore</sub></span> encourages the
+model to sometimes continue beyond the Q-head’s recommendation.</p>
+<h2 id="encoder-architectures">3.3 Encoder Architectures</h2>
+<p>We explore three paradigms for the demonstration encoder, each
+embodying a different hypothesis about what makes an effective task
+representation.</p>
+<figure>
+<img src="assets/etrm.png" alt="ETRM Architecture" />
+<figcaption aria-hidden="true">ETRM Architecture</figcaption>
+</figure>
+<p><strong>Figure 3: ETRM Architecture.</strong> Task context is
+computed from demonstration input-output pairs via a neural encoder,
+replacing the embedding matrix lookup. This enables generalization to
+novel tasks never seen during training.</p>
+<h3 id="feedforward-deterministic-encoder">3.3.1 Feedforward
+Deterministic Encoder</h3>
+<p><strong>Hypothesis</strong>: A fixed forward pass through the encoder
+can extract sufficient information from demonstrations to characterize
+the transformation rule.</p>
+<p>The encoder operates in two stages:</p>
+<p><strong>Stage 1: Per-Demo Grid Encoding.</strong> Each demonstration
+pair <span
+class="math inline">(<strong>x</strong><sub><em>i</em></sub><sup>in</sup>, <strong>x</strong><sub><em>i</em></sub><sup>out</sup>)</span>
+is encoded independently. We concatenate the input and output grids and
+process them with a transformer <span class="citation"
+data-cites="transformer"><a href="#ref-transformer"
+role="doc-biblioref">[13]</a></span>:</p>
+<p><span
+class="math display"><strong>h</strong><sub><em>i</em></sub> = TransformerEnc([<strong>x</strong><sub><em>i</em></sub><sup>in</sup>; <strong>x</strong><sub><em>i</em></sub><sup>out</sup>]) ∈ ℝ<sup>2<em>S</em> × <em>D</em></sup></span></p>
+<p>where <span class="math inline"><em>S</em> = 900</span> is the
+sequence length (flattened 30×30 grid). The transformer uses <span
+class="math inline"><em>N</em></span> self-attention layers with rotary
+position embeddings. We then pool to a single vector:</p>
+<p><span
+class="math display"><strong>e</strong><sub><em>i</em></sub> = MeanPool(<strong>h</strong><sub><em>i</em></sub> ⊙ <strong>m</strong><sub><em>i</em></sub>) ∈ ℝ<sup><em>D</em></sup></span></p>
+<p>where <span
+class="math inline"><strong>m</strong><sub><em>i</em></sub></span> masks
+padding tokens.</p>
+<p><strong>Stage 2: Set Aggregation via Cross-Attention.</strong> To
+aggregate the <span class="math inline"><em>K</em></span> demo encodings
+<span
+class="math inline">{<strong>e</strong><sub><em>i</em></sub>}<sub><em>i</em> = 1</sub><sup><em>K</em></sup></span>
+into the final context, we use cross-attention with learnable query
+tokens <span class="citation" data-cites="set-transformer"><a
+href="#ref-set-transformer" role="doc-biblioref">[15]</a></span>:</p>
+<p><span
+class="math display"><strong>c</strong> = CrossAttn(<strong>Q</strong>, <strong>E</strong>, <strong>E</strong>) ∈ ℝ<sup><em>T</em> × <em>D</em></sup></span></p>
+<p>where <span
+class="math inline"><strong>Q</strong> ∈ ℝ<sup><em>T</em> × <em>D</em></sup></span>
+are <span class="math inline"><em>T</em> = 16</span> learnable query
+tokens and <span
+class="math inline"><strong>E</strong> = [<strong>e</strong><sub>1</sub>; …; <strong>e</strong><sub><em>K</em></sub>] ∈ ℝ<sup><em>K</em> × <em>D</em></sup></span>
+are the stacked demo encodings. This allows each output token to
+selectively attend to relevant demonstrations, potentially capturing
+different aspects of the transformation rule.</p>
+<p>The complete feedforward deterministic encoder is:</p>
+<pre><code>def deterministic_encoder(demo_inputs, demo_outputs, demo_mask):
+    # Stage 1: Encode each demo pair
+    B, K, S = demo_inputs.shape
+    encodings = []
+    for i in range(K):
+        h = transformer_enc(concat(demo_inputs[:,i], demo_outputs[:,i]))
+        e = mean_pool(h, mask=demo_mask[:,i])
+        encodings.append(e)
+    E = stack(encodings, dim=1)  # (B, K, D)
+
+    # Stage 2: Cross-attention aggregation
+    Q = learnable_queries.expand(B, -1, -1)  # (B, T, D)
+    context = cross_attention(Q, E, E, mask=demo_mask)
+    return context  # (B, T, D)</code></pre>
+<h3 id="feedforward-variational-encoder">3.3.2 Feedforward Variational
+Encoder</h3>
+<p><strong>Hypothesis</strong>: A variational bottleneck encourages
+learning a structured, smooth latent space of transformation rules,
+improving generalization to novel puzzles.</p>
+<p>We explore two variational architectures:</p>
+<p><strong>Cross-Attention VAE.</strong> This variant applies the
+variational bottleneck <em>after</em> aggregating information from all
+demonstrations:</p>
+<ol type="1">
+<li>Encode each demo with a deep transformer (8 layers)</li>
+<li>Aggregate via cross-attention (same as deterministic)</li>
+<li>Pool the context and project to variational parameters: <span
+class="math display"><strong>μ</strong>, log <strong>σ</strong><sup>2</sup> = MLP(MeanPool(<strong>c</strong>))</span></li>
+<li>Sample via reparameterization <span class="citation"
+data-cites="vae"><a href="#ref-vae"
+role="doc-biblioref">[16]</a></span>: <span
+class="math display"><strong>z</strong> = <strong>μ</strong> + <strong>σ</strong> ⊙ <strong>ϵ</strong>,  <strong>ϵ</strong> ∼ 𝒩(<strong>0</strong>, <strong>I</strong>)</span></li>
+<li>Decode back to context shape: <span
+class="math display"><strong>c</strong> = Reshape(Linear(<strong>z</strong>)) ∈ ℝ<sup><em>T</em> × <em>D</em></sup></span></li>
+</ol>
+<p>The KL divergence <span class="citation" data-cites="vae"><a
+href="#ref-vae" role="doc-biblioref">[16]</a></span> regularizes toward
+a standard normal prior: <span class="math display">$$
+\mathcal{L}_{\text{KL}} = D_{\text{KL}}(q(\mathbf{z}|\text{demos}) \|
+p(\mathbf{z})) = -\frac{1}{2}\sum_j \left(1 + \log \sigma_j^2 - \mu_j^2
+- \sigma_j^2\right)
+$$</span></p>
+<p><strong>Per-Demo VAE.</strong> Inspired by the Latent Program Network
+(LPN) architecture <span class="citation" data-cites="lpn"><a
+href="#ref-lpn" role="doc-biblioref">[5]</a></span>, this variant
+applies variational inference to each demonstration independently before
+aggregation:</p>
+<ol type="1">
+<li>Encode each demo with a shallow transformer (2 layers, 128
+hidden—matching LPN exactly)</li>
+<li>Project each encoding to per-demo variational parameters: <span
+class="math display"><strong>μ</strong><sub><em>i</em></sub>, log <strong>σ</strong><sub><em>i</em></sub><sup>2</sup> = Linear(<strong>e</strong><sub><em>i</em></sub>)</span></li>
+<li>Sample each demo’s latent <span class="citation" data-cites="vae"><a
+href="#ref-vae" role="doc-biblioref">[16]</a></span>: <span
+class="math inline"><strong>z</strong><sub><em>i</em></sub> = <strong>μ</strong><sub><em>i</em></sub> + <strong>σ</strong><sub><em>i</em></sub> ⊙ <strong>ϵ</strong><sub><em>i</em></sub></span></li>
+<li>Aggregate via mean pooling (not cross-attention): <span
+class="math display">$$
+\bar{\mathbf{z}} = \frac{1}{K}\sum_{i=1}^K \mathbf{z}_i
+$$</span></li>
+<li>Project to context: <span class="math inline">$\mathbf{c} =
+\text{Reshape}(\text{Linear}(\bar{\mathbf{z}}))$</span></li>
+</ol>
+<p>The KL loss <span class="citation" data-cites="vae"><a
+href="#ref-vae" role="doc-biblioref">[16]</a></span> averages over valid
+demonstrations: <span class="math display">$$
+\mathcal{L}_{\text{KL}} = \frac{1}{K}\sum_{i=1}^K
+D_{\text{KL}}(q(\mathbf{z}_i|\mathbf{x}_i, \mathbf{y}_i) \|
+p(\mathbf{z}))
+$$</span></p>
+<p><strong>Key Difference</strong>: Cross-Attention VAE applies the
+bottleneck after seeing all demos together, potentially capturing
+cross-demo patterns. Per-Demo VAE treats each demo independently,
+relying on mean aggregation to combine information—simpler but
+potentially losing demo interactions.</p>
+<p><strong>Note on LPN</strong>: We adopt LPN’s encoder architecture
+<span class="citation" data-cites="lpn"><a href="#ref-lpn"
+role="doc-biblioref">[5]</a></span> for comparison, but we do
+<em>not</em> use their gradient-based test-time search. Our encoders
+produce fixed representations without test-time optimization.</p>
+<h3 id="iterative-encoder-joint-encoder-decoder-refinement">3.3.3
+Iterative Encoder (Joint Encoder-Decoder Refinement)</h3>
+<p><strong>Hypothesis</strong>: The same inductive bias that makes
+recursive refinement effective for the decoder might also benefit the
+encoder. Rather than computing task context once, we let the encoder
+refine its representation alongside the decoder’s reasoning.</p>
+<p>This architecture mirrors TRM’s decoder structure within the
+encoder:</p>
+<p><strong>Encoder State</strong>: The encoder maintains dual latent
+states analogous to the decoder: - <span
+class="math inline"><strong>z</strong><sub><em>e</em></sub><sup><em>H</em></sup></span>:
+High-level context (serves as output to decoder) - <span
+class="math inline"><strong>z</strong><sub><em>e</em></sub><sup><em>L</em></sup></span>:
+Low-level reasoning state</p>
+<p><strong>Hierarchical Refinement</strong>: Each ACT <span
+class="citation" data-cites="act"><a href="#ref-act"
+role="doc-biblioref">[14]</a></span> step, the encoder refines its
+states using the same H/L loop pattern as the decoder:</p>
+<pre><code>def iterative_encoder_step(z_e_H, z_e_L, demo_input, H_cycles, L_cycles):
+    # demo_input: aggregated demo representation
+
+    for h in range(H_cycles):
+        for l in range(L_cycles):
+            z_e_L = L_level(z_e_L, z_e_H + demo_input)
+        z_e_H = L_level(z_e_H, z_e_L)
+
+    return z_e_H, z_e_L  # z_e_H is context for decoder</code></pre>
+<p><strong>Joint Evolution</strong>: Unlike feedforward encoders that
+compute context once, the iterative encoder’s carry state persists
+across ACT steps <span class="citation" data-cites="act"><a
+href="#ref-act" role="doc-biblioref">[14]</a></span>. The encoder
+refines its understanding of the transformation rule as the decoder
+refines its prediction—a form of joint reasoning.</p>
+<p><strong>Rationale</strong>: If recursive refinement helps the decoder
+progressively improve predictions, perhaps it can similarly help the
+encoder progressively clarify its understanding of the task. This is
+speculative—it’s unclear whether encoding benefits from iteration the
+same way decoding does.</p>
+<h2 id="integration-with-trm-decoder">3.4 Integration with TRM
+Decoder</h2>
+<p>For all encoder types, integration with the TRM decoder follows a
+consistent pattern:</p>
+<ol type="1">
+<li><strong>Context Injection</strong>: The encoder output <span
+class="math inline"><strong>c</strong> ∈ ℝ<sup><em>T</em> × <em>D</em></sup></span>
+replaces the puzzle embedding</li>
+<li><strong>Position Concatenation</strong>: Context is prepended to
+input token embeddings</li>
+<li><strong>Forward Pass</strong>: The combined representation flows
+through TRM’s recursive reasoning</li>
+</ol>
+<p>The decoder architecture remains unchanged from original TRM <span
+class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span>: - Same dual-state design (<span
+class="math inline"><strong>y</strong></span>, <span
+class="math inline"><strong>z</strong></span>) - Same H/L cycle
+structure - Same ACT <span class="citation" data-cites="act"><a
+href="#ref-act" role="doc-biblioref">[14]</a></span> halting mechanism -
+Deep supervision at each step</p>
+<h2 id="training-protocol">3.5 Training Protocol</h2>
+<h3 id="strict-trainevaluation-separation">3.5.1 Strict Train/Evaluation
+Separation</h3>
+<p>A critical difference from TRM is our enforcement of complete data
+separation:</p>
+<table>
+<colgroup>
+<col style="width: 28%" />
+<col style="width: 36%" />
+<col style="width: 36%" />
+</colgroup>
+<thead>
+<tr>
+<th>Split</th>
+<th>Puzzles</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Training</td>
+<td>~560 groups (ARC-AGI training + concept)</td>
+<td>Model training</td>
+</tr>
+<tr>
+<td>Evaluation</td>
+<td>~400 groups (ARC-AGI evaluation)</td>
+<td>Testing generalization</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key Property</strong>: Evaluation puzzles’ demonstrations are
+<em>never</em> seen during training. The encoder must extract
+transformation rules from demos it encounters for the first time at test
+time—true few-shot evaluation.</p>
+<h3 id="data-augmentation">3.5.2 Data Augmentation</h3>
+<p>Following TRM, we apply approximately 1000 augmented versions per
+puzzle:</p>
+<ul>
+<li><strong>Color Permutation</strong>: Random shuffle of colors 1-9
+(black=0 remains fixed)</li>
+<li><strong>Dihedral Transforms</strong>: 8 geometric transforms (4
+rotations × 2 reflections)</li>
+<li><strong>Translation</strong>: Random positioning within 30×30 grid
+(training only)</li>
+</ul>
+<p><strong>Consistency Constraint</strong>: The same augmentation is
+applied to all components of a puzzle (all demos + test input/output),
+preserving the transformation rule’s structure.</p>
+<h3 id="encoder-re-encoding-solving-gradient-starvation">3.5.3 Encoder
+Re-encoding: Solving Gradient Starvation</h3>
+<p>During development, we discovered a critical issue with caching
+encoder outputs.</p>
+<p><strong>Problem</strong>: Our initial implementation computed encoder
+output once when a sample started and cached it in the carry state. With
+dynamic halting, only samples that reset receive fresh encoder
+outputs—approximately 2% of samples per step. This meant the encoder
+received gradients from only 2% of the data, severely limiting its
+learning.</p>
+<p><strong>Symptom</strong>: Training accuracy plateaued at ~35% with
+minimal encoder learning.</p>
+<p><strong>Solution</strong>: Re-encode the full batch at every ACT step
+(no caching):</p>
+<pre><code>def forward_step(carry, batch):
+    # ALWAYS encode - no caching
+    context = encoder(batch[&#39;demo_inputs&#39;],
+                     batch[&#39;demo_outputs&#39;],
+                     batch[&#39;demo_mask&#39;])
+
+    # Proceed with decoder...
+    output = decoder(carry, batch[&#39;inputs&#39;], context)
+    return output</code></pre>
+<p>This ensures 100% gradient coverage for the encoder, at the cost of
+additional computation. After this fix, training accuracy improved from
+35% to over 86%.</p>
+<h3 id="pretrained-decoder-initialization">3.5.4 Pretrained Decoder
+Initialization</h3>
+<p>We initialize the decoder from TRM’s pretrained weights, which
+provides two benefits:</p>
+<ol type="1">
+<li><strong>Faster Convergence</strong>: The decoder already knows
+recursive refinement for ARC-style tasks</li>
+<li><strong>Encoder Focus</strong>: The encoder can concentrate on
+learning good representations rather than jointly learning to
+decode</li>
+</ol>
+<p>We explore two training modes: - <strong>Frozen Decoder</strong>:
+Only encoder parameters updated (faster, ensures encoder learns) -
+<strong>Joint Fine-tuning</strong>: Both encoder and decoder updated
+(potentially better final performance)</p>
+<h3 id="variational-training">3.5.5 Variational Training</h3>
+<p>For VAE-based encoders, training includes the KL divergence term:</p>
+<p><span
+class="math display">ℒ = ℒ<sub>CE</sub> + <em>β</em> ⋅ ℒ<sub>KL</sub></span></p>
+<p>where <span class="math inline">ℒ<sub>CE</sub></span> is the
+cross-entropy reconstruction loss and <span
+class="math inline"><em>β</em></span> weights the KL term.</p>
+<p><strong>Practical Considerations</strong>: - <strong>KL
+Annealing</strong>: Start with <span
+class="math inline"><em>β</em> = 0</span>, gradually increase to target
+value - <strong>Numerical Stability</strong>: Clamp <span
+class="math inline">log <em>σ</em><sup>2</sup></span> to <span
+class="math inline">[−10, 10]</span> to prevent overflow in <span
+class="math inline">exp </span> - <strong>Evaluation Mode</strong>: Use
+mean (<span class="math inline"><strong>μ</strong></span>) without
+sampling for deterministic evaluation</p>
+<h2 id="design-space-summary">3.6 Design Space Summary</h2>
+<p><strong>Table 3: Encoder architecture design space</strong></p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+<col style="width: 18%" />
+<col style="width: 21%" />
+</colgroup>
+<thead>
+<tr>
+<th>Encoder Type</th>
+<th>Aggregation</th>
+<th>Variational</th>
+<th>Parameters</th>
+<th>Key Property</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Feedforward Deterministic</td>
+<td>Cross-attention</td>
+<td>No</td>
+<td>~15M</td>
+<td>Simple, stable baseline</td>
+</tr>
+<tr>
+<td>Cross-Attention VAE</td>
+<td>Cross-attention</td>
+<td>Post-aggregation</td>
+<td>~16M</td>
+<td>Regularized latent space</td>
+</tr>
+<tr>
+<td>Per-Demo VAE</td>
+<td>Mean</td>
+<td>Per-demo</td>
+<td>~1M</td>
+<td>LPN-inspired, compact</td>
+</tr>
+<tr>
+<td>Iterative (TRM-style)</td>
+<td>Mean</td>
+<td>No</td>
+<td>~8M</td>
+<td>Joint refinement with decoder</td>
+</tr>
+</tbody>
+</table>
+<p>Each architecture embodies different hypotheses about task
+representation: - <strong>Cross-attention vs. Mean</strong>: Can
+selective attention to specific demos improve representation? -
+<strong>Variational vs. Deterministic</strong>: Does KL regularization
+improve generalization? - <strong>Iterative vs. Feedforward</strong>:
+Does recursive refinement benefit encoding?</p>
+<p>We evaluate these hypotheses empirically in Section 4.</p>
+<h1 id="experiments">4. Experiments</h1>
+<p>We evaluate ETRM’s ability to generalize to puzzles whose
+demonstrations were never seen during training. Our experiments reveal a
+striking negative result: all encoder architectures achieve 0% accuracy
+on held-out puzzles despite reasonable training performance, a
+phenomenon we attribute to encoder collapse.</p>
+<h2 id="experimental-setup">4.1 Experimental Setup</h2>
+<h3 id="dataset">4.1.1 Dataset</h3>
+<p>We train and evaluate on ARC-AGI-1, which contains 400 training
+puzzles and 400 evaluation puzzles <span class="citation"
+data-cites="chollet2019"><a href="#ref-chollet2019"
+role="doc-biblioref">[1]</a></span>. Following TRM <span
+class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span>, we augment the training set with
+approximately 160 additional “concept” puzzles that target specific
+transformation primitives.</p>
+<p><strong>Data Augmentation.</strong> Each puzzle is augmented
+approximately 1000 times using: - Color permutation: Random shuffle of
+colors 1-9 (black remains fixed) - Dihedral transforms: 8 geometric
+transformations (4 rotations and 2 reflections) - Translation: Random
+positioning within the 30x30 grid (training only)</p>
+<p>The same augmentation is applied consistently to all components of a
+puzzle (demonstrations and test queries), preserving the transformation
+rule’s structure.</p>
+<p><strong>Critical Distinction: True Few-Shot Evaluation.</strong> A
+key difference between ETRM and TRM evaluation lies in data separation.
+In TRM, evaluation puzzle identifiers exist in the embedding matrix and
+receive gradient updates during training—the model has effectively
+“seen” these puzzles <span class="citation" data-cites="hrm-analysis"><a
+href="#ref-hrm-analysis" role="doc-biblioref">[3]</a></span>. In ETRM,
+we enforce strict separation: evaluation puzzle demonstrations are
+<em>never</em> seen during training. The encoder must extract
+transformation rules from demonstrations it encounters for the first
+time at test time. This is true few-shot evaluation.</p>
+<p><strong>Table 4: Dataset split summary</strong></p>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 22%" />
+<col style="width: 33%" />
+<col style="width: 24%" />
+<col style="width: 8%" />
+</colgroup>
+<thead>
+<tr>
+<th>Split</th>
+<th>Puzzle Groups</th>
+<th>Augmentation Factor</th>
+<th>Total Samples</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Training</td>
+<td>~560 (training + concept)</td>
+<td>~1000x</td>
+<td>~560,000</td>
+<td>Model training</td>
+</tr>
+<tr>
+<td>Evaluation</td>
+<td>~400 (evaluation)</td>
+<td>~1000x</td>
+<td>~400,000</td>
+<td>True few-shot testing</td>
+</tr>
+</tbody>
+</table>
+<h3 id="evaluation-protocol">4.1.2 Evaluation Protocol</h3>
+<p><strong>Metrics.</strong> We report Pass@k accuracy, where a puzzle
+is considered solved if the correct answer appears among the top-k most
+common predictions. We report Pass@1 (primary metric), Pass@2, and
+Pass@5.</p>
+<p><strong>Voting Mechanism.</strong> Following TRM <span
+class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span>, we aggregate predictions across all
+augmented versions of each puzzle (~1000 per puzzle). Each augmented
+version produces a prediction, which is inverse-transformed back to the
+original coordinate space. The final prediction is determined by
+majority voting across these predictions.</p>
+<p><strong>Subset Evaluation.</strong> Due to computational constraints,
+we evaluate on a subset of 32 puzzle groups, representing approximately
+8% of the full evaluation set. Evaluating the full set requires
+approximately 24 hours per model, as voting aggregates predictions
+across ~1000 augmented versions of each puzzle. While subset evaluation
+limits statistical power, the results are sufficiently clear (0% vs 37%+
+accuracy) that the subset provides reliable signal.</p>
+<h3 id="training-configuration">4.1.3 Training Configuration</h3>
+<p><strong>Decoder Initialization.</strong> We initialize the decoder
+from pretrained TRM weights, providing the benefit of an already-capable
+recursive reasoning module. Critically, the decoder is <em>not</em>
+frozen—gradients flow through all decoder parameters during training.
+This ensures that any failure to generalize cannot be attributed to a
+frozen decoder that cannot adapt to encoder outputs.</p>
+<p><strong>Hyperparameters.</strong> We use batch size 256 for
+deterministic and iterative encoders, reduced to 128 for Cross-Attention
+VAE due to memory constraints. ACT maximum steps is set to 16 with
+exploration probability 0.5. Following Section 3.5.3, we re-encode the
+full batch at every ACT step to ensure adequate gradient flow to the
+encoder.</p>
+<p><strong>Table 5: Training hyperparameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Deterministic</th>
+<th>Variational</th>
+<th>Iterative</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Batch size</td>
+<td>256</td>
+<td>128</td>
+<td>256</td>
+</tr>
+<tr>
+<td>Learning rate</td>
+<td>1e-4</td>
+<td>1e-4</td>
+<td>1e-4</td>
+</tr>
+<tr>
+<td>ACT max steps</td>
+<td>16</td>
+<td>16</td>
+<td>16</td>
+</tr>
+<tr>
+<td>Exploration prob</td>
+<td>0.5</td>
+<td>0.5</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>Grad clip norm</td>
+<td>1.0</td>
+<td>1.0</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>Re-encode batch</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Decoder frozen</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h3 id="computational-resources">4.1.4 Computational Resources</h3>
+<p>All experiments were conducted on a server with 4 NVIDIA A100 80GB
+GPUs. Training used distributed data-parallel execution via PyTorch’s
+torchrun across all 4 GPUs. Each ETRM variant required approximately
+12-24 hours to reach 175k training steps. The TRM baseline required
+approximately 48 hours to reach convergence at 518k steps.</p>
+<h2 id="trm-baseline">4.2 TRM Baseline</h2>
+<p>We first reproduce TRM training to establish a baseline for
+comparison. Results at two checkpoints:</p>
+<p><strong>Table 6: TRM baseline results</strong></p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Params</th>
+<th>Pass@1</th>
+<th>Pass@2</th>
+<th>Pass@5</th>
+<th>Train Acc</th>
+<th>Steps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TRM (155k steps)</td>
+<td>7M</td>
+<td>37.38%</td>
+<td>41.25%</td>
+<td>47.12%</td>
+<td>92.50%</td>
+<td>155k</td>
+</tr>
+<tr>
+<td>TRM (converged)</td>
+<td>7M</td>
+<td>41.75%</td>
+<td>48.75%</td>
+<td>52.25%</td>
+<td>98.44%</td>
+<td>518k</td>
+</tr>
+</tbody>
+</table>
+<p>At 155k steps—comparable to our ETRM training duration—TRM achieves
+37.38% Pass@1 accuracy with 92.50% training accuracy. With continued
+training to 518k steps, performance improves to 41.75% Pass@1 and 98.44%
+training accuracy.</p>
+<h2 id="etrm-results">4.3 ETRM Results</h2>
+<p>We evaluate three encoder architectures from Section 3.3, each
+embodying a different hypothesis about effective task
+representation:</p>
+<p><strong>Table 7: ETRM results</strong></p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 19%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 9%" />
+</colgroup>
+<thead>
+<tr>
+<th>Model</th>
+<th>Encoder Type</th>
+<th>Params</th>
+<th>Pass@1</th>
+<th>Pass@2</th>
+<th>Pass@5</th>
+<th>Train Acc</th>
+<th>Steps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ETRM-Deterministic</td>
+<td>Feedforward Deterministic (Section 3.3.1)</td>
+<td>22M</td>
+<td>0.00%</td>
+<td>0.50%</td>
+<td>0.50%</td>
+<td>78.91%</td>
+<td>175k</td>
+</tr>
+<tr>
+<td>ETRM-Variational</td>
+<td>Cross-Attention VAE (Section 3.3.2)</td>
+<td>23M</td>
+<td>0.00%</td>
+<td>0.00%</td>
+<td>0.00%</td>
+<td>40.62%</td>
+<td>174k</td>
+</tr>
+<tr>
+<td>ETRM-Iterative</td>
+<td>Iterative TRM-style (Section 3.3.3)</td>
+<td>15M</td>
+<td>0.00%</td>
+<td>0.25%</td>
+<td>0.25%</td>
+<td>51.17%</td>
+<td>87k</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Complete Generalization Failure.</strong> All three encoder
+architectures achieve 0% Pass@1 accuracy on held-out puzzles. This is
+despite achieving 40-79% training accuracy—the models learn to solve
+training puzzles but completely fail to generalize.</p>
+<p><strong>Architecture-Agnostic Failure.</strong> The failure is
+consistent across fundamentally different encoder designs: feedforward
+deterministic, variational with KL regularization, and iterative with
+joint refinement. This suggests the problem is fundamental to the
+encoder-based approach rather than a matter of architectural choice.</p>
+<p><strong>Table 8: Summary comparison at comparable training
+time</strong></p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 16%" />
+<col style="width: 13%" />
+<col style="width: 13%" />
+<col style="width: 13%" />
+<col style="width: 13%" />
+<col style="width: 18%" />
+</colgroup>
+<thead>
+<tr>
+<th>Model</th>
+<th>Approach</th>
+<th>Params</th>
+<th>Pass@1</th>
+<th>Pass@2</th>
+<th>Pass@5</th>
+<th>Train Acc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TRM (155k)</td>
+<td>Embedding lookup</td>
+<td>7M</td>
+<td>37.38%</td>
+<td>41.25%</td>
+<td>47.12%</td>
+<td>92.50%</td>
+</tr>
+<tr>
+<td>ETRM-Deterministic</td>
+<td>Feedforward encoder</td>
+<td>22M</td>
+<td>0.00%</td>
+<td>0.50%</td>
+<td>0.50%</td>
+<td>78.91%</td>
+</tr>
+<tr>
+<td>ETRM-Variational</td>
+<td>VAE encoder</td>
+<td>23M</td>
+<td>0.00%</td>
+<td>0.00%</td>
+<td>0.00%</td>
+<td>40.62%</td>
+</tr>
+<tr>
+<td>ETRM-Iterative</td>
+<td>Recurrent encoder</td>
+<td>15M</td>
+<td>0.00%</td>
+<td>0.25%</td>
+<td>0.25%</td>
+<td>51.17%</td>
+</tr>
+</tbody>
+</table>
+<h2 id="analysis">4.4 Analysis</h2>
+<h3 id="training-dynamics">4.4.1 Training Dynamics</h3>
+<figure>
+<img src="assets/training_curves.png"
+alt="Figure 4: Training accuracy over time for TRM and ETRM variants" />
+<figcaption aria-hidden="true">Figure 4: Training accuracy over time for
+TRM and ETRM variants</figcaption>
+</figure>
+<p><strong>Figure 4: Training accuracy over time for TRM and ETRM
+variants.</strong> TRM (dashed line) reaches 98% accuracy and continues
+improving. ETRM variants plateau at lower accuracies: Feedforward
+Deterministic (79%), Iterative (51%), Cross-Attention VAE (41%).</p>
+<p>Figure 4 shows training accuracy over time. TRM (dashed line) reaches
+98% accuracy and continues improving throughout training. In contrast,
+ETRM variants plateau at substantially lower accuracies: the Feedforward
+Deterministic encoder reaches 79%, the Iterative encoder plateaus around
+51%, and the Cross-Attention VAE struggles to exceed 41%.</p>
+<p>The training accuracy gap between TRM and ETRM-Deterministic (92% vs
+79% at comparable steps) already indicates that the encoder-based
+approach faces optimization challenges. However, the more striking
+observation is the complete disconnect between training and test
+performance for ETRM—79% training accuracy translates to 0% test
+accuracy.</p>
+<h3 id="encoder-collapse">4.4.2 Encoder Collapse</h3>
+<p>To understand the 0% test accuracy, we analyze the encoder outputs
+directly. We measure cross-sample variance: how different are encoder
+outputs across different puzzles?</p>
+<figure>
+<img src="assets/encoder_collapse.png"
+alt="Figure 5: Encoder output statistics showing cross-sample variance, within-sample variance, and output distributions" />
+<figcaption aria-hidden="true">Figure 5: Encoder output statistics
+showing cross-sample variance, within-sample variance, and output
+distributions</figcaption>
+</figure>
+<p><strong>Figure 5: Encoder output statistics.</strong> Analysis of
+cross-sample variance, within-sample variance, and output distributions
+reveals encoder collapse across all variants.</p>
+<p><strong>Table 9: Encoder collapse analysis</strong></p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Cross-Sample Variance</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ETRM-Deterministic</td>
+<td>0.36</td>
+<td>Low—collapsed</td>
+</tr>
+<tr>
+<td>ETRM-Variational</td>
+<td>3.33</td>
+<td>Higher—KL prevents full collapse</td>
+</tr>
+<tr>
+<td>ETRM-Iterative</td>
+<td>0.15</td>
+<td>Very low—severely collapsed</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Diagnosis: Encoder Collapse.</strong> The encoders learn to
+produce near-constant outputs regardless of input demonstrations.
+Cross-sample variance measures how much encoder outputs vary across
+different puzzles—low variance indicates the encoder produces similar
+representations for different transformation rules.</p>
+<p>The Feedforward Deterministic encoder shows cross-sample variance of
+only 0.36, indicating highly similar outputs across puzzles. The
+Iterative encoder is even more severely collapsed at 0.15.
+Interestingly, the Cross-Attention VAE shows higher variance (3.33),
+likely because the KL regularization toward a standard normal prior
+prevents complete collapse—yet this does not translate to better test
+accuracy.</p>
+<p><strong>Mechanism.</strong> With collapsed encoder outputs, the
+decoder receives essentially the same “task representation” for every
+puzzle. The decoder cannot distinguish between different transformation
+rules, explaining the complete failure on held-out puzzles. During
+training, the model achieves reasonable accuracy by memorizing
+input-output mappings for specific training examples rather than
+learning to extract and apply transformation rules.</p>
+<h3 id="qualitative-examples">4.4.3 Qualitative Examples</h3>
+<figure>
+<img src="assets/qualitative_combined.png"
+alt="Figure 6: Predictions on held-out puzzles showing Input, Ground Truth, ETRM-Deterministic prediction, and TRM prediction for 3-4 example puzzles" />
+<figcaption aria-hidden="true">Figure 6: Predictions on held-out puzzles
+showing Input, Ground Truth, ETRM-Deterministic prediction, and TRM
+prediction for 3-4 example puzzles</figcaption>
+</figure>
+<p><strong>Figure 6: Predictions on held-out puzzles.</strong> ETRM
+produces structured outputs but applies incorrect transformations (left
+columns), while TRM produces correct predictions (right columns). This
+is consistent with encoder collapse preventing task-specific context
+from reaching the decoder.</p>
+<p>Figure 6 shows qualitative predictions on held-out evaluation
+puzzles. ETRM produces structured outputs—not random noise—but applies
+incorrect transformations. For example, where the ground truth requires
+a rotation operation, ETRM might produce a color-filling pattern
+unrelated to the demonstrated rule. This is consistent with encoder
+collapse: the decoder has learned <em>some</em> transformation behavior,
+but without puzzle-specific context, it cannot select the correct
+transformation.</p>
+<p>In contrast, TRM (which has embeddings for these puzzles) produces
+predictions that match or closely approximate the ground truth,
+demonstrating that the decoder architecture is capable of solving these
+puzzles given appropriate task context.</p>
+<h3 id="key-findings-1">4.4.4 Key Findings</h3>
+<p>Our experiments reveal several important findings:</p>
+<ol type="1">
+<li><p><strong>Complete generalization failure.</strong> All ETRM
+variants achieve 0% Pass@1 accuracy on held-out puzzles, despite
+training accuracies ranging from 41% to 79%. The encoder-based approach
+fails to enable true few-shot learning.</p></li>
+<li><p><strong>Encoder collapse explains the failure.</strong> Analysis
+of encoder outputs reveals that all encoders produce near-constant
+outputs regardless of input demonstrations. The encoders fail to extract
+puzzle-specific information, instead collapsing to a fixed
+representation.</p></li>
+<li><p><strong>Architecture-agnostic failure.</strong> Feedforward,
+variational, and iterative encoder architectures all fail similarly.
+This suggests the problem is fundamental to learning to encode
+transformation rules from demonstrations, not a matter of architectural
+choice.</p></li>
+<li><p><strong>Training-test gap.</strong> The Feedforward Deterministic
+encoder achieves 79% training accuracy but 0% test accuracy—a complete
+disconnect. The model memorizes training puzzle input-output mappings
+rather than learning generalizable rule extraction.</p></li>
+<li><p><strong>Contrast with TRM.</strong> TRM achieves 37% Pass@1 at
+comparable training steps by memorizing puzzle embeddings. While not
+true generalization, this demonstrates the decoder’s capability when
+given appropriate task context—a capability the collapsed encoders fail
+to leverage.</p></li>
+</ol>
+<p><strong>Implications.</strong> Replacing learned embeddings with a
+demonstration encoder is a natural idea for enabling generalization, but
+our experiments reveal this is substantially harder than expected. The
+encoder consistently collapses to constant outputs rather than learning
+to extract transformation rules from demonstrations. Understanding and
+preventing this collapse is essential for progress on encoder-based
+approaches to few-shot program induction.</p>
+<h1 id="discussion">5. Discussion</h1>
+<p>Our experiments demonstrate a striking negative result: all ETRM
+variants achieve reasonable training accuracy (40-79%) but complete
+failure on held-out puzzles (0% Pass@1). This section analyzes why the
+encoder-based approach fails, what we learned from the failure, and what
+directions appear most promising for future work.</p>
+<h2 id="analysis-of-results">5.1 Analysis of Results</h2>
+<h3 id="the-generalization-gap">5.1.1 The Generalization Gap</h3>
+<p>The core observation demands explanation: how can a model achieve 79%
+training accuracy yet 0% test accuracy? We consider two hypotheses:</p>
+<p><strong>(A) Task Difficulty.</strong> Extracting transformation rules
+from demonstrations in a single forward pass—without any feedback
+signal—is fundamentally harder than refining puzzle-specific embeddings
+over many gradient updates. The encoder must perform a form of
+meta-learning: learning to learn from examples <span class="citation"
+data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span>.</p>
+<p><strong>(B) Implementation Issues.</strong> Our encoder designs,
+training procedures, or hyperparameter choices may have flaws that
+prevented learning useful representations.</p>
+<p>Our experiments provide evidence for hypothesis (A). Three
+fundamentally different encoder architectures—feedforward deterministic,
+variational with KL regularization, and iterative with joint
+refinement—all failed. The ETRM-Iterative experiment is particularly
+informative: despite providing iterative encoding analogous to TRM’s
+recursive decoder, it still achieved 0% test accuracy. This suggests the
+problem is not insufficient computation but rather the absence of a
+guiding signal during refinement.</p>
+<p>We cannot fully rule out hypothesis (B), but the consistent failure
+pattern across architectures points toward task difficulty as the
+primary factor.</p>
+<h3 id="the-asymmetry-between-trm-and-etrm">5.1.2 The Asymmetry Between
+TRM and ETRM</h3>
+<p>Understanding why TRM succeeds while ETRM fails requires examining
+how each learns transformation rules.</p>
+<p><strong>How TRM learns.</strong> TRM <span class="citation"
+data-cites="trm"><a href="#ref-trm" role="doc-biblioref">[2]</a></span>
+refines each puzzle embedding over hundreds of thousands of training
+steps. Each of the ~876,000 puzzle-augmentation combinations receives
+approximately 500+ gradient updates during training. The embedding
+gradually captures task-specific patterns through this extended
+optimization—a significant advantage where the model has many
+opportunities to learn each transformation.</p>
+<p><strong>What we ask the encoder to do.</strong> ETRM’s encoder must
+extract the transformation rule from just 2-5 demonstration pairs in a
+single forward pass, producing a representation that works for
+transformations never seen during training. This is meta-learning: the
+encoder must learn <em>how to learn</em> from examples.</p>
+<p>The difficulty gap becomes clearer when we compare refinement
+mechanisms:</p>
+<p><strong>Table 10: Refinement mechanisms comparison</strong></p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 30%" />
+<col style="width: 43%" />
+</colgroup>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Refinement</th>
+<th>Feedback Signal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TRM <span class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span></td>
+<td>Gradient descent on embedding</td>
+<td>Ground-truth labels (supervised)</td>
+</tr>
+<tr>
+<td>LPN <span class="citation" data-cites="lpn"><a href="#ref-lpn"
+role="doc-biblioref">[5]</a></span></td>
+<td>Gradient ascent in latent space</td>
+<td>Demo consistency (self-supervised)</td>
+</tr>
+<tr>
+<td>ETRM (feedforward)</td>
+<td>Single forward pass</td>
+<td>None</td>
+</tr>
+<tr>
+<td>ETRM-Iterative</td>
+<td>Multiple encoder iterations</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<p>Our ETRM-Iterative experiment tested whether iteration alone could
+help—it could not. The issue is not computation but feedback. TRM <span
+class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span> refinement is guided by gradients
+from ground-truth labels. LPN <span class="citation" data-cites="lpn"><a
+href="#ref-lpn" role="doc-biblioref">[5]</a></span> test-time search is
+guided by leave-one-out demo consistency. ETRM’s encoder iterates
+without any signal indicating whether its representation is
+improving.</p>
+<p><strong>Takeaway:</strong> Effective latent space refinement requires
+a feedback signal—either supervised (labels) or self-supervised (demo
+consistency). Unguided iteration is insufficient.</p>
+<h3 id="evidence-from-cross-sample-variance">5.1.3 Evidence from
+Cross-Sample Variance</h3>
+<p>To understand the failure mechanism, we analyzed encoder outputs
+directly (Section 4.4.2). Cross-sample variance measures how differently
+the encoder responds to different puzzles:</p>
+<p><strong>Table 11: Cross-sample variance analysis</strong></p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Cross-Sample Variance</th>
+<th>Train Acc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ETRM-Deterministic</td>
+<td>0.36</td>
+<td>78.91%</td>
+</tr>
+<tr>
+<td>ETRM-Variational</td>
+<td>3.33</td>
+<td>40.62%</td>
+</tr>
+<tr>
+<td>ETRM-Iterative</td>
+<td>0.15</td>
+<td>51.17%</td>
+</tr>
+</tbody>
+</table>
+<p>The Feedforward Deterministic encoder shows low variance (0.36)—it
+produces similar outputs regardless of which demonstrations are
+provided. The Iterative encoder is even more collapsed (0.15). With
+near-constant encoder outputs, the decoder receives essentially the same
+“task representation” for every puzzle.</p>
+<p>This explains the training-test disconnect. The decoder likely learns
+to ignore the uninformative encoder signal and instead memorizes
+input-output mappings for training examples directly. The model achieves
+high training accuracy through memorization <span class="citation"
+data-cites="hrm-analysis"><a href="#ref-hrm-analysis"
+role="doc-biblioref">[3]</a></span>, but without discriminative encoder
+representations, it cannot generalize to new transformations.</p>
+<h3 id="did-variational-encoding-help">5.1.4 Did Variational Encoding
+Help?</h3>
+<p>We hypothesized that variational encoders might encourage more
+diverse representations through KL regularization. The Cross-Attention
+VAE achieved 10x higher cross-sample variance (3.33 vs 0.36) compared to
+the deterministic encoder—yet still 0% test accuracy.</p>
+<p>Higher variance does not equal useful variance. The variational
+encoder produces diverse representations, but these representations are
+not discriminative for transformation rules. The KL penalty toward a
+standard normal prior may push representations away from task-relevant
+structure. Additionally, VAE regularization prevented decoder
+memorization (lower 40.62% training accuracy) without producing
+transformation-relevant features.</p>
+<p><strong>Takeaway:</strong> Variance alone is insufficient;
+representations must capture transformation-relevant information.
+Diversity without discriminability does not enable generalization.</p>
+<h3 id="qualitative-failure-modes">5.1.5 Qualitative Failure Modes</h3>
+<p>Examination of ETRM predictions on held-out puzzles (Figure 6,
+Section 4.4.3) reveals several failure modes:</p>
+<ol type="1">
+<li><p><strong>Collapsed outputs.</strong> Some predictions are nearly
+uniform (solid color), directly reflecting encoder collapse propagating
+to the decoder.</p></li>
+<li><p><strong>Structured but wrong.</strong> Some predictions show grid
+structure and color patterns, but the wrong transformation is
+applied—e.g., color filling where rotation was required.</p></li>
+<li><p><strong>Partial correctness.</strong> Occasionally, predictions
+capture some aspect of the transformation (correct colors, wrong
+arrangement), suggesting the decoder has learned general grid
+manipulation skills.</p></li>
+</ol>
+<p>These patterns are consistent with a model that has learned
+<em>something</em> about ARC transformations from training but cannot
+select the correct transformation without a useful encoder signal. In
+contrast, TRM <span class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span> predictions (with puzzle embeddings)
+are often correct or close, demonstrating the decoder is capable when
+given appropriate task context.</p>
+<h3 id="context-for-comparison-with-trm">5.1.6 Context for Comparison
+with TRM</h3>
+<p>Direct comparison between TRM and ETRM requires acknowledging a
+fundamental difference in what each model is asked to do:</p>
+<p><strong>Table 12: Context for TRM/ETRM comparison</strong></p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 25%" />
+<col style="width: 34%" />
+<col style="width: 18%" />
+</colgroup>
+<thead>
+<tr>
+<th>Model</th>
+<th>Pass@1</th>
+<th>Train Acc</th>
+<th>Task</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TRM <span class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span> (155k steps)</td>
+<td>37.38%</td>
+<td>92.50%</td>
+<td>Generalize to augmented versions of known puzzles</td>
+</tr>
+<tr>
+<td>TRM <span class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span> (518k steps)</td>
+<td>41.75%</td>
+<td>98.44%</td>
+<td>Same</td>
+</tr>
+<tr>
+<td>ETRM-Deterministic (175k steps)</td>
+<td>0.00%</td>
+<td>78.91%</td>
+<td>Generalize to entirely unseen transformations</td>
+</tr>
+</tbody>
+</table>
+<p>TRM <span class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span> test puzzles have embeddings that
+receive gradient updates during training—it generalizes to different
+augmentations (color permutations, rotations) of puzzles it has “seen.”
+ETRM must generalize to transformations it has never encountered, a
+fundamentally harder task.</p>
+<p>Our encoder approach does not achieve few-shot generalization.
+However, the comparison is not entirely fair. A more appropriate
+comparison would be with LPN <span class="citation" data-cites="lpn"><a
+href="#ref-lpn" role="doc-biblioref">[5]</a></span>, which achieves
+15.5% on held-out puzzles—but only with test-time gradient optimization
+that we deliberately avoided.</p>
+<h2 id="challenges-encountered-and-solutions">5.2 Challenges Encountered
+and Solutions</h2>
+<p>Several practical challenges emerged during development:</p>
+<h3 id="gradient-starvation">5.2.1 Gradient Starvation</h3>
+<p><strong>Problem:</strong> Our initial implementation cached encoder
+outputs, resulting in only ~2% gradient coverage for the encoder per
+step.</p>
+<p><strong>Symptom:</strong> Training accuracy plateaued at 35-50% with
+minimal encoder learning.</p>
+<p><strong>Solution:</strong> Re-encode the full batch at every ACT step
+(no caching), ensuring 100% gradient coverage at the cost of additional
+computation.</p>
+<p><strong>Lesson:</strong> Gradient flow analysis is critical when
+modifying architectures with dynamic computation patterns.</p>
+<h3 id="training-stability">5.2.2 Training Stability</h3>
+<p><strong>Problem:</strong> Training collapsed around step 1900 due to
+encoder output distribution shifting faster than the decoder could
+adapt.</p>
+<p><strong>Solution:</strong> Gradient clipping (grad_clip_norm=1.0)
+stabilized training throughout subsequent experiments.</p>
+<h3 id="monitoring-representation-quality">5.2.3 Monitoring
+Representation Quality</h3>
+<p>We introduced cross-sample variance as a diagnostic metric during
+training, tracking diversity of encoder outputs across the batch. Low
+variance proved to be an early indicator of representation collapse.
+This metric is essential for future encoder-based approaches.</p>
+<h2 id="limitations">5.3 Limitations</h2>
+<h3 id="computational-constraints">5.3.1 Computational Constraints</h3>
+<p>Our experiments operated under significant resource constraints:</p>
+<ul>
+<li><strong>Training duration:</strong> 25k-175k steps vs TRM’s 518k
+steps (~4 days per run on 4 GPUs)</li>
+<li><strong>Evaluation scope:</strong> 32 puzzle groups (8%) instead of
+full 400 (~1 day on 4 GPUs for full evaluation)</li>
+<li><strong>Single seed:</strong> No variance estimates across runs</li>
+</ul>
+<p>These results provide directional signal—0% vs 37% accuracy is
+unambiguous—but absolute performance numbers might improve with
+additional training.</p>
+<h3 id="architecture-exploration">5.3.2 Architecture Exploration</h3>
+<p>We tested three encoder paradigms but did not explore alternatives
+that might succeed:</p>
+<ul>
+<li>Slot attention for object-centric encoding</li>
+<li>Graph neural networks for relational reasoning</li>
+<li>Contrastive objectives for discriminative representations</li>
+</ul>
+<p>A different architecture might succeed where ours failed.</p>
+<h3 id="implementation-caveats">5.3.3 Implementation Caveats</h3>
+<p>We cannot fully rule out implementation issues:</p>
+<ul>
+<li>Encoder architectures may be suboptimal</li>
+<li>Training dynamics may have undetected problems</li>
+<li>Hyperparameters may be poorly tuned</li>
+</ul>
+<p>One known issue: EMA weights from the pretrained TRM checkpoint were
+not properly loaded for the decoder. This is unlikely to explain the
+generalization failure because the decoder was trainable and reached 79%
+training accuracy—the problem is generalization, not learning
+capacity.</p>
+<p>The consistent failure across three architectures suggests task
+difficulty rather than implementation bugs, but more exploration is
+warranted.</p>
+<h2 id="future-directions">5.4 Future Directions</h2>
+<p>Our results suggest that computing task representations in a single
+forward pass is insufficient for extracting transformation rules.
+Drawing on the program synthesis taxonomy from Section 2, we identify
+promising directions.</p>
+<h3 id="self-supervised-test-time-search-most-promising">5.4.1
+Self-Supervised Test-Time Search (Most Promising)</h3>
+<p>Our ETRM-Iterative experiment showed that iteration alone is
+insufficient—the encoder refines its representation but has no signal
+indicating whether it is improving. Both TRM <span class="citation"
+data-cites="trm"><a href="#ref-trm" role="doc-biblioref">[2]</a></span>
+and LPN <span class="citation" data-cites="lpn"><a href="#ref-lpn"
+role="doc-biblioref">[5]</a></span> succeed because they have feedback
+signals guiding refinement: TRM <span class="citation"
+data-cites="trm"><a href="#ref-trm" role="doc-biblioref">[2]</a></span>
+uses label gradients during training, LPN <span class="citation"
+data-cites="lpn"><a href="#ref-lpn" role="doc-biblioref">[5]</a></span>
+uses demo consistency at test time.</p>
+<p>LPN <span class="citation" data-cites="lpn"><a href="#ref-lpn"
+role="doc-biblioref">[5]</a></span> demonstrates that self-supervised
+gradient search in latent space can significantly improve generalization
+(7.75% to 15.5%). Combining ETRM with test-time optimization could
+provide the missing ingredient:</p>
+<ul>
+<li><strong>Leave-one-out loss:</strong> Use held-out demo pairs as
+self-supervision for latent space search—no labels required, only the
+demos themselves</li>
+<li><strong>Hybrid search:</strong> Encoder provides warm start,
+gradient-based refinement provides the feedback loop</li>
+<li><strong>Efficiency:</strong> Starting from a learned encoder
+estimate may require fewer gradient steps than LPN’s random
+initialization</li>
+</ul>
+<p>The common thread in successful approaches is <em>guided
+refinement</em>. Our failed ETRM-Iterative suggests unguided iteration
+is not enough—but guided iteration at test time may bridge the gap.</p>
+<h3 id="contrastive-learning-for-encoder">5.4.2 Contrastive Learning for
+Encoder</h3>
+<p>An alternative to test-time optimization is training a more
+discriminative encoder:</p>
+<ul>
+<li>Train encoder to produce similar representations for demos from the
+same puzzle, different representations for demos from different
+puzzles</li>
+<li>This could encourage discriminative representations without
+requiring test-time optimization</li>
+</ul>
+<h3 id="proper-initialization">5.4.3 Proper Initialization</h3>
+<p>Use pretrained TRM checkpoint with all weights (including EMA) for
+decoder initialization, ensuring the decoder starts from the best
+possible state.</p>
+<h2 id="conclusions">5.5 Conclusions</h2>
+<p>Our experiments reveal that replacing TRM <span class="citation"
+data-cites="trm"><a href="#ref-trm" role="doc-biblioref">[2]</a></span>
+puzzle embeddings with a demonstration encoder is substantially harder
+than expected. Three encoder architectures—feedforward deterministic,
+variational, and iterative—all achieve reasonable training accuracy but
+complete failure on held-out puzzles. Analysis shows this stems from
+encoder collapse: the encoders produce near-constant outputs regardless
+of input demonstrations, forcing the decoder to memorize training
+patterns rather than learn generalizable rule extraction.</p>
+<p>The key insight is the asymmetry between TRM <span class="citation"
+data-cites="trm"><a href="#ref-trm" role="doc-biblioref">[2]</a></span>
+and ETRM. TRM <span class="citation" data-cites="trm"><a href="#ref-trm"
+role="doc-biblioref">[2]</a></span> refines each puzzle embedding over
+hundreds of thousands of gradient updates during training. ETRM asks the
+encoder to extract equivalent information in a single forward pass with
+no task-specific feedback. Our ETRM-Iterative experiment shows that
+iteration alone does not solve this problem—the missing ingredient is a
+feedback signal guiding refinement.</p>
+<p>The most promising path forward is combining ETRM’s encoder with
+test-time optimization using self-supervised signals, as demonstrated by
+LPN <span class="citation" data-cites="lpn"><a href="#ref-lpn"
+role="doc-biblioref">[5]</a></span>. This would provide the guided
+refinement that successful approaches share while preserving the ability
+to generalize to truly novel puzzles.</p>
+<h1 id="references">References</h1>
+<div id="refs" class="references csl-bib-body" data-entry-spacing="0"
+role="list">
+<div id="ref-chollet2019" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[1] </div><div class="csl-right-inline">F.
+Chollet, <span>“On the measure of intelligence,”</span> <em>arXiv
+preprint arXiv:1911.01547</em>, 2019, Available: <a
+href="https://arxiv.org/abs/1911.01547">https://arxiv.org/abs/1911.01547</a></div>
+</div>
+<div id="ref-trm" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[2] </div><div class="csl-right-inline">A.
+Jolicoeur-Martineau, <span>“Less is more: Recursive reasoning with tiny
+networks,”</span> <em>arXiv preprint arXiv:2510.04871</em>, 2025,
+Available: <a
+href="https://arxiv.org/abs/2510.04871">https://arxiv.org/abs/2510.04871</a></div>
+</div>
+<div id="ref-hrm-analysis" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[3] </div><div class="csl-right-inline">ARC
+Prize Foundation, <span>“The hidden drivers of <span>HRM</span>’s
+performance on <span>ARC-AGI</span>.”</span> ARC Prize Foundation Blog,
+2025. Available: <a
+href="https://arcprize.org/blog/hrm-analysis">https://arcprize.org/blog/hrm-analysis</a></div>
+</div>
+<div id="ref-trm-inductive" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[4] </div><div
+class="csl-right-inline">Anonymous, <span>“Tiny recursive models on
+<span>ARC-AGI-1</span>: Inductive biases, identity conditioning, and
+test-time compute,”</span> <em>arXiv preprint arXiv:2512.11847</em>,
+2025, Available: <a
+href="https://arxiv.org/abs/2512.11847">https://arxiv.org/abs/2512.11847</a></div>
+</div>
+<div id="ref-lpn" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[5] </div><div class="csl-right-inline">C.
+Bonnet and M. V. Macfarlane, <span>“Searching latent program
+spaces,”</span> <em>arXiv preprint arXiv:2411.08706</em>, 2024,
+Available: <a
+href="https://arxiv.org/abs/2411.08706">https://arxiv.org/abs/2411.08706</a></div>
+</div>
+<div id="ref-induction-transduction" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[6] </div><div
+class="csl-right-inline"><span class="nocase">Y. Li <em>et
+al.</em></span>, <span>“Combining induction and transduction for
+abstract reasoning,”</span> <em>arXiv preprint arXiv:2411.02272</em>,
+2024, Available: <a
+href="https://arxiv.org/abs/2411.02272">https://arxiv.org/abs/2411.02272</a></div>
+</div>
+<div id="ref-hemens-taxonomy" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[7] </div><div class="csl-right-inline">L.
+Hemens, <span>“How to beat <span>ARC-AGI-2</span>.”</span> lewish.io,
+2025. Available: <a
+href="https://lewish.io/posts/how-to-beat-arc-agi-2">https://lewish.io/posts/how-to-beat-arc-agi-2</a></div>
+</div>
+<div id="ref-neurosymbolic" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[8] </div><div class="csl-right-inline">S.
+Chaudhuri, K. Ellis, O. Polozov, R. Singh, A. Solar-Lezama, and Y. Yue,
+<span>“Neurosymbolic programming,”</span> <em>Foundations and Trends in
+Programming Languages</em>, vol. 7, no. 1–2, pp. 1–151, 2021, Available:
+<a
+href="https://www.nowpublishers.com/article/Details/PGL-031">https://www.nowpublishers.com/article/Details/PGL-031</a></div>
+</div>
+<div id="ref-arc-prize-2024" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[9] </div><div class="csl-right-inline">F.
+Chollet, M. Knoop, G. Kamradt, and B. Landers, <span>“<span>ARC</span>
+prize 2024: Technical report,”</span> <em>arXiv preprint
+arXiv:2412.04604</em>, 2024, Available: <a
+href="https://arxiv.org/abs/2412.04604">https://arxiv.org/abs/2412.04604</a></div>
+</div>
+<div id="ref-arc-prize-2025" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[10] </div><div class="csl-right-inline">M.
+Knoop, <span>“<span>ARC</span> prize 2025: Results and analysis.”</span>
+ARC Prize Foundation Blog, 2025. Available: <a
+href="https://arcprize.org/blog/arc-prize-2025-results-analysis">https://arcprize.org/blog/arc-prize-2025-results-analysis</a></div>
+</div>
+<div id="ref-hrm" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[11] </div><div class="csl-right-inline">G.
+Wang <em>et al.</em>, <span>“Hierarchical reasoning model,”</span>
+<em>arXiv preprint arXiv:2506.21734</em>, 2025, Available: <a
+href="https://arxiv.org/abs/2506.21734">https://arxiv.org/abs/2506.21734</a></div>
+</div>
+<div id="ref-nvarc" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[12] </div><div class="csl-right-inline">D.
+Sorokin and J.-F. Puget, <span>“<span>NVARC</span>: <span>ARC</span>
+prize 2025 1st place solution.”</span> NVIDIA, 2025. Available: <a
+href="https://www.kaggle.com/competitions/arc-prize-2025/discussion">https://www.kaggle.com/competitions/arc-prize-2025/discussion</a></div>
+</div>
+<div id="ref-transformer" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[13] </div><div class="csl-right-inline">A.
+Vaswani <em>et al.</em>, <span>“Attention is all you need,”</span> in
+<em>Advances in neural information processing systems 30 (NeurIPS
+2017)</em>, 2017. Available: <a
+href="https://arxiv.org/abs/1706.03762">https://arxiv.org/abs/1706.03762</a></div>
+</div>
+<div id="ref-act" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[14] </div><div class="csl-right-inline">A.
+Graves, <span>“Adaptive computation time for recurrent neural
+networks,”</span> <em>arXiv preprint arXiv:1603.08983</em>, 2016,
+Available: <a
+href="https://arxiv.org/abs/1603.08983">https://arxiv.org/abs/1603.08983</a></div>
+</div>
+<div id="ref-set-transformer" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[15] </div><div class="csl-right-inline">J.
+Lee, Y. Lee, J. Kim, A. Kosiorek, S. Choi, and Y. W. Teh, <span>“Set
+transformer: A framework for attention-based permutation-invariant
+neural networks,”</span> in <em>International conference on machine
+learning (ICML 2019)</em>, 2019. Available: <a
+href="https://arxiv.org/abs/1810.00825">https://arxiv.org/abs/1810.00825</a></div>
+</div>
+<div id="ref-vae" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[16] </div><div class="csl-right-inline">D.
+P. Kingma and M. Welling, <span>“Auto-encoding variational
+bayes,”</span> in <em>International conference on learning
+representations (ICLR 2014)</em>, 2014. Available: <a
+href="https://arxiv.org/abs/1312.6114">https://arxiv.org/abs/1312.6114</a></div>
+</div>
+</div>
+</body>
+</html>

@@ -2583,6 +2583,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pypandoc"
+version = "1.16.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/18/9f5f70567b97758625335209b98d5cb857e19aa1a9306e9749567a240634/pypandoc-1.16.2.tar.gz", hash = "sha256:7a72a9fbf4a5dc700465e384c3bb333d22220efc4e972cb98cf6fc723cdca86b", size = 31477, upload-time = "2025-11-13T16:30:29.608Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bb/e9/b145683854189bba84437ea569bfa786f408c8dc5bc16d8eb0753f5583bf/pypandoc-1.16.2-py3-none-any.whl", hash = "sha256:c200c1139c8e3247baf38d1e9279e85d9f162499d1999c6aa8418596558fe79b", size = 19451, upload-time = "2025-11-13T16:30:07.66Z" },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3180,6 +3189,7 @@ dev = [
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "pandas" },
+    { name = "pypandoc" },
     { name = "ruff" },
     { name = "seaborn" },
     { name = "tabulate" },
@@ -3213,6 +3223,7 @@ dev = [
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "pandas", specifier = ">=2.3.3" },
+    { name = "pypandoc", specifier = ">=1.16.2" },
     { name = "ruff", specifier = ">=0.14.10" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "tabulate", specifier = ">=0.9.0" },

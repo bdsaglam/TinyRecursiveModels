@@ -189,7 +189,7 @@
 # Paper-exact LPN with per-demo VAE: 2 layers, 128 hidden, LayerNorm, SiLU
 # 673K params - smallest encoder, best LPN semi-final result
 
-[-] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_etrm_arc_agi_1 load_pretrained_decoder=/home/baris/repos/trm/checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_518071 +project_name="etrm-final" +run_name="F4_lpn_var" arch.encoder_type=lpn_var arch.loss.kl_weight=0.0001 arch.halt_max_steps=16 arch.halt_exploration_prob=0.5 global_batch_size=256 epochs=25000 eval_interval=25000 max_eval_groups=32 log_predictions_every=50000 [3190621]
+[!] torchrun --nproc-per-node 4 --rdzv_backend=c10d --rdzv_endpoint=localhost:0 --nnodes=1 pretrain_etrm.py --config-name cfg_pretrain_etrm_arc_agi_1 load_pretrained_decoder=/home/baris/repos/trm/checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_518071 +project_name="etrm-final" +run_name="F4_lpn_var" arch.encoder_type=lpn_var arch.loss.kl_weight=0.0001 arch.halt_max_steps=16 arch.halt_exploration_prob=0.5 global_batch_size=256 epochs=25000 eval_interval=25000 max_eval_groups=32 log_predictions_every=50000
 
 # =============================================================================
 # NOTES
