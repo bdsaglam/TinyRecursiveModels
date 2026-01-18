@@ -8,7 +8,7 @@ Our experiments demonstrate a striking negative result: all ETRM variants achiev
 
 The core observation demands explanation: how can a model achieve 79% training accuracy yet 0% test accuracy? We consider two hypotheses:
 
-**(A) Task Difficulty.** Extracting transformation rules from demonstrations in a single forward pass—without any feedback signal—is fundamentally harder than refining puzzle-specific embeddings over many gradient updates. The encoder must perform a form of meta-learning: learning to learn from examples.
+**(A) Task Difficulty.** Extracting transformation rules from demonstrations in a single forward pass—without any feedback signal—is fundamentally harder than refining puzzle-specific embeddings over many gradient updates. The encoder must perform a form of meta-learning: learning to learn from examples [trm].
 
 **(B) Implementation Issues.** Our encoder designs, training procedures, or hyperparameter choices may have flaws that prevented learning useful representations.
 
@@ -20,7 +20,7 @@ We cannot fully rule out hypothesis (B), but the consistent failure pattern acro
 
 Understanding why TRM succeeds while ETRM fails requires examining how each learns transformation rules.
 
-**How TRM learns.** TRM refines each puzzle embedding over hundreds of thousands of training steps. Each of the ~876,000 puzzle-augmentation combinations receives approximately 500+ gradient updates during training. The embedding gradually captures task-specific patterns through this extended optimization—a significant advantage where the model has many opportunities to learn each transformation.
+**How TRM learns.** TRM [trm] refines each puzzle embedding over hundreds of thousands of training steps. Each of the ~876,000 puzzle-augmentation combinations receives approximately 500+ gradient updates during training. The embedding gradually captures task-specific patterns through this extended optimization—a significant advantage where the model has many opportunities to learn each transformation.
 
 **What we ask the encoder to do.** ETRM's encoder must extract the transformation rule from just 2-5 demonstration pairs in a single forward pass, producing a representation that works for transformations never seen during training. This is meta-learning: the encoder must learn *how to learn* from examples.
 
@@ -28,12 +28,12 @@ The difficulty gap becomes clearer when we compare refinement mechanisms:
 
 | Approach | Refinement | Feedback Signal |
 |----------|------------|-----------------|
-| TRM | Gradient descent on embedding | Ground-truth labels (supervised) |
-| LPN | Gradient ascent in latent space | Demo consistency (self-supervised) |
+| TRM [trm] | Gradient descent on embedding | Ground-truth labels (supervised) |
+| LPN [lpn] | Gradient ascent in latent space | Demo consistency (self-supervised) |
 | ETRM (feedforward) | Single forward pass | None |
 | ETRM-Iterative | Multiple encoder iterations | None |
 
-Our ETRM-Iterative experiment tested whether iteration alone could help—it could not. The issue is not computation but feedback. TRM's refinement is guided by gradients from ground-truth labels. LPN's test-time search is guided by leave-one-out demo consistency. ETRM's encoder iterates without any signal indicating whether its representation is improving.
+Our ETRM-Iterative experiment tested whether iteration alone could help—it could not. The issue is not computation but feedback. TRM [trm] refinement is guided by gradients from ground-truth labels. LPN [lpn] test-time search is guided by leave-one-out demo consistency. ETRM's encoder iterates without any signal indicating whether its representation is improving.
 
 **Takeaway:** Effective latent space refinement requires a feedback signal—either supervised (labels) or self-supervised (demo consistency). Unguided iteration is insufficient.
 
@@ -49,7 +49,7 @@ To understand the failure mechanism, we analyzed encoder outputs directly (Secti
 
 The Feedforward Deterministic encoder shows low variance (0.36)—it produces similar outputs regardless of which demonstrations are provided. The Iterative encoder is even more collapsed (0.15). With near-constant encoder outputs, the decoder receives essentially the same "task representation" for every puzzle.
 
-This explains the training-test disconnect. The decoder likely learns to ignore the uninformative encoder signal and instead memorizes input-output mappings for training examples directly. The model achieves high training accuracy through memorization, but without discriminative encoder representations, it cannot generalize to new transformations.
+This explains the training-test disconnect. The decoder likely learns to ignore the uninformative encoder signal and instead memorizes input-output mappings for training examples directly. The model achieves high training accuracy through memorization [hrm-analysis], but without discriminative encoder representations, it cannot generalize to new transformations.
 
 ### 5.1.4 Did Variational Encoding Help?
 
@@ -69,7 +69,7 @@ Examination of ETRM predictions on held-out puzzles (Figure 3, Section 4.4.3) re
 
 3. **Partial correctness.** Occasionally, predictions capture some aspect of the transformation (correct colors, wrong arrangement), suggesting the decoder has learned general grid manipulation skills.
 
-These patterns are consistent with a model that has learned *something* about ARC transformations from training but cannot select the correct transformation without a useful encoder signal. In contrast, TRM predictions (with puzzle embeddings) are often correct or close, demonstrating the decoder is capable when given appropriate task context.
+These patterns are consistent with a model that has learned *something* about ARC transformations from training but cannot select the correct transformation without a useful encoder signal. In contrast, TRM [trm] predictions (with puzzle embeddings) are often correct or close, demonstrating the decoder is capable when given appropriate task context.
 
 ### 5.1.6 Context for Comparison with TRM
 
@@ -77,13 +77,13 @@ Direct comparison between TRM and ETRM requires acknowledging a fundamental diff
 
 | Model | Pass@1 | Train Acc | Task |
 |-------|--------|-----------|------|
-| TRM (155k steps) | 37.38% | 92.50% | Generalize to augmented versions of known puzzles |
-| TRM (518k steps) | 41.75% | 98.44% | Same |
+| TRM [trm] (155k steps) | 37.38% | 92.50% | Generalize to augmented versions of known puzzles |
+| TRM [trm] (518k steps) | 41.75% | 98.44% | Same |
 | ETRM-Deterministic (175k steps) | 0.00% | 78.91% | Generalize to entirely unseen transformations |
 
-TRM's test puzzles have embeddings that receive gradient updates during training—it generalizes to different augmentations (color permutations, rotations) of puzzles it has "seen." ETRM must generalize to transformations it has never encountered, a fundamentally harder task.
+TRM [trm] test puzzles have embeddings that receive gradient updates during training—it generalizes to different augmentations (color permutations, rotations) of puzzles it has "seen." ETRM must generalize to transformations it has never encountered, a fundamentally harder task.
 
-Our encoder approach does not achieve few-shot generalization. However, the comparison is not entirely fair. A more appropriate comparison would be with LPN, which achieves 15.5% on held-out puzzles—but only with test-time gradient optimization that we deliberately avoided.
+Our encoder approach does not achieve few-shot generalization. However, the comparison is not entirely fair. A more appropriate comparison would be with LPN [lpn], which achieves 15.5% on held-out puzzles—but only with test-time gradient optimization that we deliberately avoided.
 
 ## 5.2 Challenges Encountered and Solutions
 
@@ -149,9 +149,9 @@ Our results suggest that computing task representations in a single forward pass
 
 ### 5.4.1 Self-Supervised Test-Time Search (Most Promising)
 
-Our ETRM-Iterative experiment showed that iteration alone is insufficient—the encoder refines its representation but has no signal indicating whether it is improving. Both TRM and LPN succeed because they have feedback signals guiding refinement: TRM uses label gradients during training, LPN uses demo consistency at test time.
+Our ETRM-Iterative experiment showed that iteration alone is insufficient—the encoder refines its representation but has no signal indicating whether it is improving. Both TRM [trm] and LPN [lpn] succeed because they have feedback signals guiding refinement: TRM [trm] uses label gradients during training, LPN [lpn] uses demo consistency at test time.
 
-LPN demonstrates that self-supervised gradient search in latent space can significantly improve generalization (7.75% to 15.5%). Combining ETRM with test-time optimization could provide the missing ingredient:
+LPN [lpn] demonstrates that self-supervised gradient search in latent space can significantly improve generalization (7.75% to 15.5%). Combining ETRM with test-time optimization could provide the missing ingredient:
 
 - **Leave-one-out loss:** Use held-out demo pairs as self-supervision for latent space search—no labels required, only the demos themselves
 - **Hybrid search:** Encoder provides warm start, gradient-based refinement provides the feedback loop
@@ -172,8 +172,8 @@ Use pretrained TRM checkpoint with all weights (including EMA) for decoder initi
 
 ## 5.5 Conclusions
 
-Our experiments reveal that replacing TRM's puzzle embeddings with a demonstration encoder is substantially harder than expected. Three encoder architectures—feedforward deterministic, variational, and iterative—all achieve reasonable training accuracy but complete failure on held-out puzzles. Analysis shows this stems from encoder collapse: the encoders produce near-constant outputs regardless of input demonstrations, forcing the decoder to memorize training patterns rather than learn generalizable rule extraction.
+Our experiments reveal that replacing TRM [trm] puzzle embeddings with a demonstration encoder is substantially harder than expected. Three encoder architectures—feedforward deterministic, variational, and iterative—all achieve reasonable training accuracy but complete failure on held-out puzzles. Analysis shows this stems from encoder collapse: the encoders produce near-constant outputs regardless of input demonstrations, forcing the decoder to memorize training patterns rather than learn generalizable rule extraction.
 
-The key insight is the asymmetry between TRM and ETRM. TRM refines each puzzle embedding over hundreds of thousands of gradient updates during training. ETRM asks the encoder to extract equivalent information in a single forward pass with no task-specific feedback. Our ETRM-Iterative experiment shows that iteration alone does not solve this problem—the missing ingredient is a feedback signal guiding refinement.
+The key insight is the asymmetry between TRM [trm] and ETRM. TRM [trm] refines each puzzle embedding over hundreds of thousands of gradient updates during training. ETRM asks the encoder to extract equivalent information in a single forward pass with no task-specific feedback. Our ETRM-Iterative experiment shows that iteration alone does not solve this problem—the missing ingredient is a feedback signal guiding refinement.
 
-The most promising path forward is combining ETRM's encoder with test-time optimization using self-supervised signals, as demonstrated by Latent Program Networks. This would provide the guided refinement that successful approaches share while preserving the ability to generalize to truly novel puzzles.
+The most promising path forward is combining ETRM's encoder with test-time optimization using self-supervised signals, as demonstrated by LPN [lpn]. This would provide the guided refinement that successful approaches share while preserving the ability to generalize to truly novel puzzles.

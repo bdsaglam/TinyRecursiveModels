@@ -93,19 +93,37 @@ See `outlines/04_method.md` Section 3.2 for full architecture descriptions.
 
 ## Citation Format
 
-Use inline citations: `[Author et al., Year]` or `[Author, Year]`
+Use **slug-based citations**: `[slug]` format.
 
-Example:
-> TRM achieves 45% accuracy on ARC-AGI-1 using only 7M parameters [Jolicoeur-Martineau, 2025].
+See `sections/06_references.md` for the full reference list with slugs.
 
-Key papers (see `docs/related-work/resources.md` for full list):
-- TRM: [Jolicoeur-Martineau, 2025]
-- HRM: [Wang et al., 2025]
-- ARC benchmark: [Chollet, 2019]
-- HRM analysis: [ARC Prize Foundation, 2025]
-- LPN: [Bonnet et al., 2024]
-- VAE: [Kingma & Welling, 2014]
-- Set Transformer: [Lee et al., 2019]
+**Example usage:**
+> TRM achieves 45% accuracy on ARC-AGI-1 using only 7M parameters [trm].
+
+**Available citation slugs:**
+
+| Slug | Reference |
+|------|-----------|
+| `[chollet2019]` | Chollet (2019) - ARC benchmark |
+| `[trm]` | Jolicoeur-Martineau (2025) - TRM paper |
+| `[hrm]` | Wang et al. (2025) - HRM paper |
+| `[lpn]` | Bonnet & Macfarlane (2024) - LPN paper |
+| `[arc-prize-2024]` | Chollet et al. (2024) - ARC Prize Technical Report |
+| `[arc-prize-2025]` | Knoop (2025) - ARC Prize 2025 Results |
+| `[hrm-analysis]` | ARC Foundation (2025) - HRM Analysis |
+| `[trm-ttt]` | McGovern (2025) - TRM Test-time Training |
+| `[trm-inductive]` | (2025) - TRM Inductive Biases paper |
+| `[transformer]` | Vaswani et al. (2017) - Transformer |
+| `[vae]` | Kingma & Welling (2014) - VAE |
+| `[set-transformer]` | Lee et al. (2019) - Set Transformer |
+| `[act]` | Graves (2016) - Adaptive Computation Time |
+| `[neurosymbolic]` | Chaudhuri et al. (2021) - Neurosymbolic Programming |
+| `[induction-transduction]` | Li et al. (2024) - Induction vs Transduction |
+| `[hemens-taxonomy]` | Hemens (2025) - ARC taxonomy blog |
+| `[nvarc]` | Sorokin & Puget (2025) - NVARC solution |
+| `[architects]` | Fiedler et al. (2024) - the ARChitects |
+
+**Note:** Slugs will be converted to numbered citations during final compilation.
 
 ---
 

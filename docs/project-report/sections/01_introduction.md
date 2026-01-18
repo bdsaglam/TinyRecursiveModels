@@ -2,15 +2,15 @@
 
 ## 1.1 Problem Context
 
-The Abstraction and Reasoning Corpus (ARC-AGI) benchmark was designed to test abstract reasoning and few-shot learning capabilities. Each task presents 2-5 demonstration pairs showing an input-output transformation, followed by test inputs where the model must infer and apply the same transformation. This format explicitly tests whether systems can extract transformation rules from examples and generalize to new inputs.
+The Abstraction and Reasoning Corpus (ARC-AGI) benchmark [chollet2019] was designed to test abstract reasoning and few-shot learning capabilities. Each task presents 2-5 demonstration pairs showing an input-output transformation, followed by test inputs where the model must infer and apply the same transformation. This format explicitly tests whether systems can extract transformation rules from examples and generalize to new inputs.
 
-Recent work has achieved surprising success on this benchmark. The Tiny Recursive Model (TRM) achieves 45% accuracy on ARC-AGI-1 with only 7 million parameters, outperforming much larger models including GPT-4. TRM's key innovation is recursive reasoning: it iteratively refines predictions through nested loops with deep supervision at each step.
+Recent work has achieved surprising success on this benchmark. The Tiny Recursive Model (TRM) [trm] achieves 45% accuracy on ARC-AGI-1 with only 7 million parameters, outperforming much larger models including GPT-4. TRM's key innovation is recursive reasoning: it iteratively refines predictions through nested loops with deep supervision at each step.
 
 ## 1.2 The Hidden Problem
 
-Analysis by the ARC Prize Foundation and subsequent work revealed a critical limitation in TRM's approach. TRM uses puzzle_id embeddings: each task is assigned a unique learned vector that conditions the model's predictions. During inference, the model receives only the input grid and this puzzle_id—it never actually processes the demonstration pairs to extract transformation rules.
+Analysis by the ARC Prize Foundation [hrm-analysis] and subsequent work revealed a critical limitation in TRM's approach. TRM uses puzzle_id embeddings: each task is assigned a unique learned vector that conditions the model's predictions. During inference, the model receives only the input grid and this puzzle_id—it never actually processes the demonstration pairs to extract transformation rules.
 
-This means transformation rules are memorized in embedding weights during training, not inferred from demonstrations at test time. The evidence is compelling: when researchers trained the related HRM model only on the 400 evaluation tasks, performance dropped from 41% to just 31%—still remarkably high for a model that has only seen those specific tasks. Furthermore, replacing puzzle_id with a random token results in 0% accuracy. The model cannot function without task-specific embeddings it has already learned.
+This means transformation rules are memorized in embedding weights during training, not inferred from demonstrations at test time. The evidence is compelling: when researchers trained the related HRM model only on the 400 evaluation tasks [hrm-analysis], performance dropped from 41% to just 31%—still remarkably high for a model that has only seen those specific tasks. Furthermore, replacing puzzle_id with a random token results in 0% accuracy [trm-inductive]. The model cannot function without task-specific embeddings it has already learned.
 
 ## 1.3 Research Question
 
@@ -45,4 +45,8 @@ Our results are primarily negative but informative:
 - Variational encoding increases representation diversity (~10x higher variance) but does not improve generalization—variance alone is insufficient.
 - Iterative encoding (ETRM-TRM) also fails, indicating the problem is not simply insufficient computation but the absence of a feedback signal during refinement.
 
-These results highlight a fundamental asymmetry: TRM refines each puzzle embedding over hundreds of thousands of gradient updates during training, while we ask the encoder to extract equivalent information in a single forward pass with no task-specific supervision. The most promising path forward appears to be adding test-time optimization with self-supervised signals, as demonstrated by Latent Program Networks.
+These results highlight a fundamental asymmetry: TRM refines each puzzle embedding over hundreds of thousands of gradient updates during training, while we ask the encoder to extract equivalent information in a single forward pass with no task-specific supervision. The most promising path forward appears to be adding test-time optimization with self-supervised signals, as demonstrated by Latent Program Networks [lpn].
+
+## 1.6 Code Availability
+
+Our implementation is available at https://github.com/bdsaglam/TinyRecursiveModels, a fork of the original TRM repository with encoder-based modifications.

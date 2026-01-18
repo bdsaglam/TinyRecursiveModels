@@ -29,6 +29,10 @@
 - [Generalization performance on held-out tasks]
 - [What we learned about encoder design for this problem]
 
+### 1.6 Code Availability
+- Code available at: https://github.com/bdsaglam/TinyRecursiveModels
+- Fork of the original TRM repository with encoder-based modifications
+
 ---
 
 *Target length: ~1-1.5 pages*

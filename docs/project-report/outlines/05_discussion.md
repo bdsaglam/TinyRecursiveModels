@@ -15,7 +15,7 @@
 
 #### 5.1.2 The Asymmetry Between TRM and ETRM
 
-**How TRM learns transformation rules:**
+**How TRM learns transformation rules [trm]:**
 - TRM refines each puzzle embedding over hundreds of thousands of training steps
 - Each puzzle receives ~500+ gradient updates during training
 - The embedding gradually captures task-specific patterns through this extended optimization
@@ -27,14 +27,14 @@
 - This is essentially meta-learning: learn to learn from examples
 
 **The difficulty gap:**
-- TRM: Refine puzzle embedding using gradients from label supervision → optimization guided by ground truth
-- LPN: Refine latent vector using gradients from leave-one-out demo loss → optimization guided by demo consistency
+- TRM [trm]: Refine puzzle embedding using gradients from label supervision → optimization guided by ground truth
+- LPN [lpn]: Refine latent vector using gradients from leave-one-out demo loss → optimization guided by demo consistency
 - ETRM (deterministic/variational): Single forward pass → no refinement at all
 - ETRM-TRM: Iterative encoding with ACT → refinement, but without supervision signal
 
 **Key observation**: We tested iterative encoding (ETRM-TRM), but it still failed. The issue is not just iteration vs single-pass—it's the absence of a guiding signal during refinement:
-- TRM's refinement is guided by gradients from ground-truth labels (supervised)
-- LPN's refinement is guided by gradients from demo consistency, e.g., leave-one-out loss (self-supervised)
+- TRM's [trm] refinement is guided by gradients from ground-truth labels (supervised)
+- LPN's [lpn] refinement is guided by gradients from demo consistency, e.g., leave-one-out loss (self-supervised)
 - ETRM-TRM iterates, but the encoder has no signal—neither supervised nor self-supervised—telling it whether its representation is improving
 
 **Takeaway**: Effective latent space refinement requires a feedback signal—either supervised (labels) or self-supervised (demo consistency). Unguided iteration is not sufficient.
@@ -69,17 +69,17 @@
   2. **Structured but wrong**: Some predictions show grid structure and color patterns, but wrong transformation applied
   3. **Partial correctness**: Occasionally captures some aspect of the transformation (e.g., right colors, wrong arrangement)
 - **Interpretation**: The decoder has learned *something* about grid manipulation from pretraining, but without useful encoder signal, it cannot select the right transformation
-- **Contrast with TRM**: TRM predictions are often correct or close, demonstrating that the decoder architecture is capable when given proper transformation guidance
+- **Contrast with TRM [trm]**: TRM [trm] predictions are often correct or close, demonstrating that the decoder architecture is capable when given proper transformation guidance
 
 #### 5.1.6 Comparison to Original TRM
-- TRM (155k steps): 37.38% pass@1, 92.50% train accuracy
-- TRM (518k steps): 41.75% pass@1, 98.44% train accuracy
+- TRM [trm] (155k steps): 37.38% pass@1, 92.50% train accuracy
+- TRM [trm] (518k steps): 41.75% pass@1, 98.44% train accuracy
 - ETRM-Deterministic (175k steps): 0% pass@1, 78.91% train accuracy
 - **Context**: These tasks differ fundamentally:
-  - TRM generalizes to augmented versions of known puzzles (same transformation, different colors/rotations)
+  - TRM [trm] generalizes to augmented versions of known puzzles (same transformation, different colors/rotations)
   - ETRM must generalize to entirely unseen transformations
-  - TRM refines each puzzle embedding over ~500+ gradient updates during training; ETRM has no such refinement at test time
-- **Conclusion**: Our encoder approach does not achieve few-shot generalization. However, adding test-time optimization (as in LPN) could bridge this gap—this is the most promising direction for future work
+  - TRM [trm] refines each puzzle embedding over ~500+ gradient updates during training; ETRM has no such refinement at test time
+- **Conclusion**: Our encoder approach does not achieve few-shot generalization. However, adding test-time optimization (as in LPN [lpn]) could bridge this gap—this is the most promising direction for future work
 
 ### 5.2 Challenges Encountered & Solutions
 
@@ -134,14 +134,14 @@ Our results suggest that the single forward pass through the encoder may be insu
 
 #### 5.4.1 Adding Self-Supervised Test-Time Search to ETRM (Most Promising)
 
-Our ETRM-TRM experiment showed that iterative encoding alone is insufficient—the encoder refines its representation but has no signal indicating whether it's improving. Both TRM and LPN succeed because they have a feedback signal guiding refinement: TRM uses label gradients during training, LPN uses demo consistency at test time.
+Our ETRM-TRM experiment showed that iterative encoding alone is insufficient—the encoder refines its representation but has no signal indicating whether it's improving. Both TRM [trm] and LPN [lpn] succeed because they have a feedback signal guiding refinement: TRM [trm] uses label gradients during training, LPN [lpn] uses demo consistency at test time.
 
-LPN demonstrates that self-supervised gradient-based search in latent space can significantly improve generalization (7.75% → 15.5%). Combining ETRM with test-time optimization could provide the missing ingredient:
+LPN [lpn] demonstrates that self-supervised gradient-based search in latent space can significantly improve generalization (7.75% → 15.5%) [lpn]. Combining ETRM with test-time optimization could provide the missing ingredient:
 
-- **LPN-style gradient optimization**: Starting from encoder's initial estimate, perform gradient ascent in latent space using a demo-derived loss signal
-- **Leave-one-out loss**: Use held-out demo pairs as self-supervision for latent space search (as in LPN)—no labels required, only the demos themselves
+- **LPN-style gradient optimization [lpn]**: Starting from encoder's initial estimate, perform gradient ascent in latent space using a demo-derived loss signal
+- **Leave-one-out loss**: Use held-out demo pairs as self-supervision for latent space search (as in LPN [lpn])—no labels required, only the demos themselves
 - **Hybrid search**: Encoder provides warm start, gradient-based refinement provides the feedback loop
-- **Key insight**: The common thread in TRM and LPN is guided refinement—our failed ETRM-TRM suggests unguided iteration is not enough
+- **Key insight**: The common thread in TRM [trm] and LPN [lpn] is guided refinement—our failed ETRM-TRM suggests unguided iteration is not enough
 
 #### 5.4.2 Contrastive Learning for Encoder
 

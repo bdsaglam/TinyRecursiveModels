@@ -6,7 +6,7 @@ We evaluate ETRM's ability to generalize to puzzles whose demonstrations were ne
 
 ### 4.1.1 Dataset
 
-We train and evaluate on ARC-AGI-1, which contains 400 training puzzles and 400 evaluation puzzles [Chollet, 2019]. Following TRM [Jolicoeur-Martineau, 2025], we augment the training set with approximately 160 additional "concept" puzzles that target specific transformation primitives.
+We train and evaluate on ARC-AGI-1, which contains 400 training puzzles and 400 evaluation puzzles [chollet2019]. Following TRM [trm], we augment the training set with approximately 160 additional "concept" puzzles that target specific transformation primitives.
 
 **Data Augmentation.** Each puzzle is augmented approximately 1000 times using:
 - Color permutation: Random shuffle of colors 1-9 (black remains fixed)
@@ -15,7 +15,7 @@ We train and evaluate on ARC-AGI-1, which contains 400 training puzzles and 400 
 
 The same augmentation is applied consistently to all components of a puzzle (demonstrations and test queries), preserving the transformation rule's structure.
 
-**Critical Distinction: True Few-Shot Evaluation.** A key difference between ETRM and TRM evaluation lies in data separation. In TRM, evaluation puzzle identifiers exist in the embedding matrix and receive gradient updates during training—the model has effectively "seen" these puzzles. In ETRM, we enforce strict separation: evaluation puzzle demonstrations are *never* seen during training. The encoder must extract transformation rules from demonstrations it encounters for the first time at test time. This is true few-shot evaluation.
+**Critical Distinction: True Few-Shot Evaluation.** A key difference between ETRM and TRM evaluation lies in data separation. In TRM, evaluation puzzle identifiers exist in the embedding matrix and receive gradient updates during training—the model has effectively "seen" these puzzles [hrm-analysis]. In ETRM, we enforce strict separation: evaluation puzzle demonstrations are *never* seen during training. The encoder must extract transformation rules from demonstrations it encounters for the first time at test time. This is true few-shot evaluation.
 
 [Table 1: Dataset split summary showing training puzzles (~560 groups), evaluation puzzles (~400 groups), augmentation factor (~1000x), and total samples]
 
@@ -23,7 +23,7 @@ The same augmentation is applied consistently to all components of a puzzle (dem
 
 **Metrics.** We report Pass@k accuracy, where a puzzle is considered solved if the correct answer appears among the top-k most common predictions. We report Pass@1 (primary metric), Pass@2, and Pass@5.
 
-**Voting Mechanism.** Following TRM, we aggregate predictions across all augmented versions of each puzzle (~1000 per puzzle). Each augmented version produces a prediction, which is inverse-transformed back to the original coordinate space. The final prediction is determined by majority voting across these predictions.
+**Voting Mechanism.** Following TRM [trm], we aggregate predictions across all augmented versions of each puzzle (~1000 per puzzle). Each augmented version produces a prediction, which is inverse-transformed back to the original coordinate space. The final prediction is determined by majority voting across these predictions.
 
 **Subset Evaluation.** Due to computational constraints, we evaluate on a subset of 32 puzzle groups, representing approximately 8% of the full evaluation set. Evaluating the full set requires approximately 24 hours per model, as voting aggregates predictions across ~1000 augmented versions of each puzzle. While subset evaluation limits statistical power, the results are sufficiently clear (0% vs 37%+ accuracy) that the subset provides reliable signal.
 

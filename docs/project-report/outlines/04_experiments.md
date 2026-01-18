@@ -11,7 +11,7 @@
 ### 4.1 Experimental Setup
 
 #### 4.1.1 Dataset
-- ARC-AGI-1: 400 training + 400 evaluation tasks
+- ARC-AGI-1 [chollet2019]: 400 training + 400 evaluation tasks
 - Additional ~160 "concept" tasks added to training
 - Preprocessing: ~1000 augmented versions per task
 - **Critical**: Strict train/eval separation - evaluation task demos never seen during training (unlike TRM where eval puzzle embeddings receive gradients)
@@ -36,12 +36,12 @@
 
 ### 4.2 TRM Baseline (Reproduction)
 
-We reproduced TRM training. Results at comparable training time (~155k steps) and final convergence (~518k steps):
+We reproduced TRM training [trm]. Results at comparable training time (~155k steps) and final convergence (~518k steps):
 
 | Model | Params | Pass@1 | Pass@2 | Pass@5 | Train Acc | Steps |
 |-------|--------|--------|--------|--------|-----------|-------|
-| TRM (155k steps) | 7M | 37.38% | 41.25% | 47.12% | 92.50% | 155k |
-| TRM (converged) | 7M | 41.75% | 48.75% | 52.25% | 98.44% | 518k |
+| TRM (155k steps) [trm] | 7M | 37.38% | 41.25% | 47.12% | 92.50% | 155k |
+| TRM (converged) [trm] | 7M | 41.75% | 48.75% | 52.25% | 98.44% | 518k |
 
 **Note**: TRM's evaluation puzzles have embeddings in the embedding matrix that receive gradient updates during training - not true generalization.
 
@@ -67,7 +67,7 @@ Three encoder architectures from Method Section 3.3:
 
 | Model | Approach | Params | Pass@1 | Pass@2 | Pass@5 | Train Acc |
 |-------|----------|--------|--------|--------|--------|-----------|
-| TRM (155k) | Embedding lookup | 7M | 37.38% | 41.25% | 47.12% | 92.50% |
+| TRM (155k) [trm] | Embedding lookup | 7M | 37.38% | 41.25% | 47.12% | 92.50% |
 | ETRM-Deterministic | Feedforward encoder | 22M | 0.00% | 0.50% | 0.50% | 78.91% |
 | ETRM-Variational | VAE encoder | 23M | 0.00% | 0.00% | 0.00% | 40.62% |
 | ETRM-Iterative | Recurrent encoder | 15M | 0.00% | 0.25% | 0.25% | 51.17% |
@@ -102,7 +102,7 @@ Three encoder architectures from Method Section 3.3:
 
 4. **Training vs generalization gap**: ETRM-Deterministic achieves 79% training accuracy but 0% test accuracy - the encoder memorizes training puzzles rather than learning to extract generalizable rules.
 
-5. **Contrast with TRM**: TRM achieves 37% Pass@1 at comparable training steps by memorizing puzzle embeddings. The encoder-based approach cannot match even this "memorization" performance on held-out puzzles.
+5. **Contrast with TRM**: TRM [trm] achieves 37% Pass@1 at comparable training steps by memorizing puzzle embeddings. The encoder-based approach cannot match even this "memorization" performance on held-out puzzles.
 
 ---
 
