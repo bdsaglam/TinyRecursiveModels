@@ -1,7 +1,7 @@
 #!/bin/bash
 # Copy checkpoints from amax7 to amax1
 
-SUB_DIRECTORY="etrm-final/F3_etrmtrm"
+SUB_DIRECTORY="mmi-714/trm_repro"
 
 SOURCE_DIR="/home/baris/repos/trm-original/checkpoints/$SUB_DIRECTORY"
 TARGET_HOST="baris@144.122.52.7"

@@ -24,7 +24,31 @@
 - Exploration probability: 0.5
 - Gradient clipping: 1.0
 
-#### 4.1.4 Computational Constraints
+#### 4.1.4 EMA Checkpoint Issue
+
+**TRM reproduction succeeded:** We reproduced the original TRM training, achieving 41.75% pass@1 and 48.75% pass@2 during training (logged to W&B), matching the paper's reported ~45% pass@2.
+
+**Checkpoint saving bug discovered:** The training script uses Exponential Moving Average (EMA) for evaluation but only saves regular (non-EMA) weights to disk:
+- **During training** (EMA model): 41.75% pass@1, 48.75% pass@2
+- **Saved checkpoint** (non-EMA): 3.25% pass@1, 3.9% pass@2
+
+The EMA weights were never persisted and are now lost.
+
+| Checkpoint | pass@1 | pass@2 | Status |
+|------------|--------|--------|--------|
+| EMA (during training) | 41.75% | 48.75% | Lost - not saved |
+| Non-EMA (saved) | 3.25% | 3.9% | Available |
+
+**Downstream impact:**
+- All subsequent evaluations of the TRM checkpoint show ~3% instead of ~42%
+- All ETRM experiments use `load_pretrained_decoder` from the non-EMA checkpoint
+- The pretrained decoder is significantly weaker than intended
+
+**Comparison remains fair:** All models (TRM baseline and ETRM variants) use the same non-EMA decoder weights, so relative comparisons are valid.
+
+**Lesson learned:** Always save EMA checkpoints separately when using EMA during training.
+
+#### 4.1.5 Computational Constraints
 - **Training**: Full training to convergence requires ~4 days on 4 GPUs
 - **Evaluation**: Full evaluation (400 puzzle groups × ~1000 augmentations with voting) requires ~1 day on 4 GPUs
 - Given limited time and resources as a course project, we made pragmatic choices:
@@ -68,8 +92,10 @@ Based on preliminary results, selected configurations for extended training (25k
 | Per-Demo VAE (LPN-style) | 25k | [TBD] | [TBD] | [TBD] |
 
 **Reference comparison**:
-- Original TRM with puzzle_id: 45% on ARC-AGI-1 (with task memorization)
-- Note: Direct comparison not meaningful - our task (true few-shot) is fundamentally harder
+- Original TRM with puzzle_id (EMA, paper): ~45% pass@2 on ARC-AGI-1 (with task memorization)
+- Original TRM with puzzle_id (non-EMA checkpoint): 3.25% pass@1, 3.9% pass@2
+- Note: We compare against the non-EMA checkpoint since that's what our pretrained decoder uses
+- The few-shot generalization task is fundamentally harder than memorization, so lower results are expected
 
 ---
 
