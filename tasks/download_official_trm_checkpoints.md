@@ -18,7 +18,7 @@ The ARC Prize team has released official EMA checkpoints on Hugging Face:
 pip install huggingface_hub
 
 # Download the ARC-AGI-1 checkpoint (this is the one we need)
-huggingface-cli download arcprize/trm_arc_prize_verification --local-dir ./checkpoints/official_trm
+hf download arcprize/trm_arc_prize_verification --local-dir ./checkpoints/official_trm
 ```
 
 Or in Python:
