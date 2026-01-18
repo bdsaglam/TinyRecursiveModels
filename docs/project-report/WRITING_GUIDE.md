@@ -71,6 +71,26 @@ Total target: ~10 pages main content
 
 ---
 
+## Terminology: Code Names → Report Names
+
+Internal code names must be translated to descriptive names in the report:
+
+| Code Name | Report Name |
+|-----------|-------------|
+| `standard` | Feedforward Deterministic Encoder |
+| `hybrid_standard` | Feedforward Deterministic Encoder (deep) |
+| `hybrid_variational` / `hybrid_var` | Cross-Attention VAE |
+| `lpn_var` / `lpn_variational` | Per-Demo VAE (LPN-style) |
+| `etrmtrm` | Iterative Encoder |
+
+**Other terms to avoid:**
+- "semi-final" / "final" experiments → use "preliminary" / "full training"
+- "overfit test" → use "preliminary experiments on subset"
+
+See `outlines/04_method.md` Section 3.2 for full architecture descriptions.
+
+---
+
 ## Citation Format
 
 Use inline citations: `[Author et al., Year]` or `[Author, Year]`

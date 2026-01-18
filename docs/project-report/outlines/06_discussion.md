@@ -36,12 +36,22 @@
 - Solution: Gradient clipping (grad_clip_norm=1.0)
 - Subsequent training stable
 
+#### 5.2.3 Representation Collapse
+- **Problem**: Some encoder configurations produce near-identical outputs for different tasks
+- **Detection**: Cross-sample variance metric - measures diversity of encoder outputs across batch
+- **Symptoms**: Low cross-sample variance, high train accuracy but poor generalization
+- **Relevance to generative modeling**: Related to mode collapse in VAEs, posterior collapse
+- **Observations**: [Which architectures were more prone to this? Did variational encoders help?]
+- See Appendix A for detailed variance plots across training
+
 ### 5.3 Limitations
 
 #### 5.3.1 Computational Constraints
-- Limited to ~50k epochs (vs TRM's 500k+ steps)
-- Smaller batch sizes for larger encoders
-- Evaluation on subset (32 groups vs full 400)
+- **Training duration**: Limited to 25k-50k epochs vs original TRM's 100k+ epochs (~4 days per run on 4 GPUs)
+- **Convergence**: Models may not have fully converged; longer training could improve results
+- **Evaluation scope**: 32 puzzle groups instead of full 400 (full eval requires ~1 day on 4 GPUs)
+- **Batch size**: Reduced for larger encoders due to memory constraints
+- These constraints are typical for course projects with limited compute access; results provide directional signal but absolute numbers may improve with more training
 
 #### 5.3.2 Architecture Exploration
 - Not exhaustive search of encoder designs

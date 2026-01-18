@@ -1,9 +1,11 @@
 #!/bin/bash
 # Copy checkpoints from amax7 to amax1
 
-SOURCE_DIR="/home/baris/repos/trm-original/checkpoints/etrm-final"
+PROJECT_NAME="Arc1concept-aug-1000-ACT-torch"
+
+SOURCE_DIR="/home/baris/repos/trm-original/checkpoints/$PROJECT_NAME"
 TARGET_HOST="baris@144.122.52.7"
-TARGET_DIR="/home/baris/repos/TinyRecursiveModels/checkpoints/etrm-final"
+TARGET_DIR="/home/baris/repos/TinyRecursiveModels/checkpoints/$PROJECT_NAME"
 
 # Create target directory on remote server first
 ssh "$TARGET_HOST" "mkdir -p $TARGET_DIR"

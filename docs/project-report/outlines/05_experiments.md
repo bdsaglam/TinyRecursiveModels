@@ -25,9 +25,14 @@
 - Gradient clipping: 1.0
 
 #### 4.1.4 Computational Constraints
-- Full training runs require ~4 days on 4 GPUs
-- Not feasible to do exhaustive search with full training
-- Approach: preliminary experiments on subset to identify promising configurations, then full training on selected architectures
+- **Training**: Full training to convergence requires ~4 days on 4 GPUs
+- **Evaluation**: Full evaluation (400 puzzle groups × ~1000 augmentations with voting) requires ~1 day on 4 GPUs
+- Given limited time and resources as a course project, we made pragmatic choices:
+  - Preliminary experiments to identify promising architectures before full training
+  - Full training limited to 25k-50k epochs instead of original TRM's 100k+ epochs
+  - Evaluation on 32 puzzle groups (8% of full eval set) instead of all 400
+- These choices provide sufficient signal for architecture comparison while remaining computationally feasible
+- Limitations acknowledged in Discussion: models may not have fully converged, results on subset may not reflect full evaluation set
 
 ### 4.2 Preliminary Experiments: Architecture Search
 
