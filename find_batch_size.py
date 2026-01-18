@@ -16,14 +16,14 @@ Usage:
         --config-overrides arch.encoder_type=lpn_var arch.encoder_num_layers=8
 """
 
+import argparse
+import gc
 import os
 import sys
-import gc
-import argparse
 from typing import Any, Optional
 
 import torch
-from hydra import initialize_config_dir, compose
+from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
 
@@ -34,38 +34,53 @@ from utils.functions import load_model_class
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Find maximum batch size via binary search")
-    parser.add_argument(
-        "--config-name", type=str, required=True,
-        help="Hydra config name (e.g., cfg_pretrain_etrm_arc_agi_1)"
+    parser = argparse.ArgumentParser(
+        description="Find maximum batch size via binary search"
     )
     parser.add_argument(
-        "--model-type", type=str, choices=["etrm", "etrmtrm"], default=None,
-        help="Model type: etrm or etrmtrm (auto-detected if not specified)"
+        "--config-name",
+        type=str,
+        required=True,
+        help="Hydra config name (e.g., cfg_pretrain_etrm_arc_agi_1)",
     )
     parser.add_argument(
-        "--min-batch", type=int, default=1,
-        help="Minimum batch size to try (default: 1)"
+        "--model-type",
+        type=str,
+        choices=["etrm", "etrmtrm"],
+        default=None,
+        help="Model type: etrm or etrmtrm (auto-detected if not specified)",
     )
     parser.add_argument(
-        "--max-batch", type=int, default=1024,
-        help="Maximum batch size to try (default: 1024)"
+        "--min-batch",
+        type=int,
+        default=1,
+        help="Minimum batch size to try (default: 1)",
     )
     parser.add_argument(
-        "--config-overrides", nargs="*", default=[],
-        help="Additional Hydra config overrides"
+        "--max-batch",
+        type=int,
+        default=1024,
+        help="Maximum batch size to try (default: 1024)",
     )
     parser.add_argument(
-        "--forward-steps", type=int, default=2,
-        help="Number of forward steps to test (default: 2)"
+        "--config-overrides",
+        nargs="*",
+        default=[],
+        help="Additional Hydra config overrides",
     )
     parser.add_argument(
-        "--with-backward", action="store_true",
-        help="Also test backward pass (more memory needed)"
+        "--forward-steps",
+        type=int,
+        default=2,
+        help="Number of forward steps to test (default: 2)",
     )
     parser.add_argument(
-        "--gpu", type=int, default=0,
-        help="GPU index to use (default: 0)"
+        "--with-backward",
+        action="store_true",
+        help="Also test backward pass (more memory needed)",
+    )
+    parser.add_argument(
+        "--gpu", type=int, default=0, help="GPU index to use (default: 0)"
     )
     return parser.parse_args()
 
@@ -134,9 +149,11 @@ def create_model(config: Any, model_type: str, batch_size: int):
     # Create base model
     if model_type == "etrm":
         from models.recursive_reasoning.etrm import TRMWithEncoder
+
         base_model = TRMWithEncoder(model_cfg)
     elif model_type == "etrmtrm":
         from models.recursive_reasoning.etrmtrm import TRMWithRecurrentEncoder
+
         base_model = TRMWithRecurrentEncoder(model_cfg)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
@@ -154,8 +171,12 @@ def create_dummy_batch(batch_size: int, max_demos: int = 10, seq_len: int = 900)
     return {
         "inputs": torch.randint(0, 12, (batch_size, seq_len), device="cuda"),
         "labels": torch.randint(0, 12, (batch_size, seq_len), device="cuda"),
-        "demo_inputs": torch.randint(0, 12, (batch_size, max_demos, seq_len), device="cuda"),
-        "demo_labels": torch.randint(0, 12, (batch_size, max_demos, seq_len), device="cuda"),
+        "demo_inputs": torch.randint(
+            0, 12, (batch_size, max_demos, seq_len), device="cuda"
+        ),
+        "demo_labels": torch.randint(
+            0, 12, (batch_size, max_demos, seq_len), device="cuda"
+        ),
         "demo_mask": torch.ones(batch_size, max_demos, dtype=torch.bool, device="cuda"),
         "puzzle_identifiers": torch.randint(0, 1000, (batch_size,), device="cuda"),
     }
@@ -183,7 +204,7 @@ def try_batch_size(
             model.eval()
 
         # Create dummy batch
-        max_demos = config.max_demos if hasattr(config, 'max_demos') else 10
+        max_demos = config.max_demos if hasattr(config, "max_demos") else 10
         batch = create_dummy_batch(batch_size, max_demos=max_demos)
 
         # Initialize carry
@@ -302,7 +323,9 @@ def main():
 
     # Infer model type if not specified (from config name)
     model_type = args.model_type or infer_model_type(args.config_name)
-    model_type_str = f"{model_type} (auto-detected)" if args.model_type is None else model_type
+    model_type_str = (
+        f"{model_type} (auto-detected)" if args.model_type is None else model_type
+    )
 
     # Load config
     config = load_config(args.config_name, args.config_overrides)
@@ -342,14 +365,12 @@ def main():
     if args.with_backward:
         print(f"  (with backward pass)")
     else:
-        print(f"  (forward only - training may need ~50% less)")
+        print(f"  (forward only)")
 
     # Suggest global batch sizes (for 4 GPU setup)
-    print(f"\nSuggested global_batch_size for 4 GPUs:")
-    for multiplier in [1, 2, 4]:
-        suggested = (max_batch // multiplier) * 4
-        if suggested > 0:
-            print(f"  {suggested} (per-GPU: {suggested // 4})")
+    for n_gpu in range(1, 5):
+        suggested = max_batch * n_gpu
+        print(f"For {n_gpu} GPUs: {suggested}")
 
     print("=" * 60)
 
