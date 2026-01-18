@@ -42,7 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dataset.fewshot_puzzle_dataset import FewShotPuzzleDataset, FewShotPuzzleDatasetConfig
 from dataset.common import PuzzleDatasetMetadata
 from evaluators.arc import ARC
-from models.common import load_model_class
+from utils.functions import load_model_class
 
 
 def parse_args():
