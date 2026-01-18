@@ -1,0 +1,47 @@
+% 01_introduction.tex
+% LaTeX version of Introduction section for Overleaf.
+% Requires a bibliography with keys: chollet2019, trm, hrm-analysis, trm-inductive, lpn
+
+\section{Introduction}
+\label{sec:introduction}
+
+\subsection{Problem context}
+
+The Abstraction and Reasoning Corpus (ARC-AGI) benchmark \cite{chollet2019} was designed to test abstract reasoning and few-shot learning capabilities. Each task presents 2--5 demonstration pairs showing an input--output transformation, followed by test inputs where the model must infer and apply the same transformation. This format explicitly tests whether systems can extract transformation rules from examples and generalize to new inputs.
+
+Recent work has achieved surprising success on this benchmark. The Tiny Recursive Model (TRM) \cite{trm} achieves 45\% accuracy on ARC-AGI-1 with only 7 million parameters, outperforming much larger models including GPT-4. TRM's key innovation is recursive reasoning: it iteratively refines predictions through nested loops with deep supervision at each step.
+
+\subsection{The hidden problem}
+
+Analysis by the ARC Prize Foundation \cite{hrm-analysis} and subsequent work revealed a critical limitation in TRM's approach. TRM uses \emph{puzzle\_id} embeddings: each task is assigned a unique learned vector that conditions the model's predictions. During inference the model receives only the input grid and this puzzle\_id—it never actually processes the demonstration pairs to extract transformation rules.
+
+Consequently, transformation rules are effectively memorized in embedding weights during training rather than inferred from demonstrations at test time. The evidence is compelling: when researchers trained a related model only on the 400 evaluation tasks, performance dropped from 41\% to 31\% \cite{hrm-analysis}—still remarkably high given the restricted training set. Furthermore, replacing the puzzle\_id with a random token results in 0\% accuracy \cite{trm-inductive}, showing the model cannot function without task-specific embeddings it has already learned.
+
+\subsection{Research question}
+
+This project asks: \textbf{Can we replace task-specific embeddings with an encoder that extracts transformation rules directly from demonstration pairs at test time?} Such an approach would enable true few-shot generalization to novel tasks never seen during training—the original intent of the ARC benchmark. The architectural comparison between TRM's embedding-based approach and our encoder-based approach is illustrated in Section~\ref{sec:method}.
+
+\subsection{Contributions}
+
+We present ETRM (Encoder-based TRM), an architecture that replaces TRM's puzzle\_id lookup with a neural encoder that processes demonstration pairs. Our main contributions are:
+
+\begin{enumerate}
+  \item \textbf{Encoder-based architecture.} We design and implement ETRM, which computes task representations from demonstrations rather than retrieving memorized embeddings.
+  \item \textbf{Systematic evaluation of encoder designs.} We evaluate three encoder paradigms—deterministic transformers, variational encoders, and iterative encoding with adaptive computation—to understand which architectural choices matter.
+  \item \textbf{Strict train/eval separation.} We implement a protocol where evaluation puzzles and their demonstrations are never seen during training, enabling measurement of true generalization.
+  \item \textbf{Analysis of failure modes.} We identify and analyze why encoder-based approaches struggle, including gradient starvation during training and the fundamental asymmetry between learning embeddings over many gradient updates versus extracting rules in a single forward pass.
+\end{enumerate}
+
+\subsection{Key findings}
+
+Our results are primarily negative but informative:
+
+\begin{itemize}
+  \item All ETRM variants achieve moderate-to-high training accuracy (40--79\%) but near-zero test accuracy ($<1\%$) on held-out puzzles.
+  \item The deterministic encoder shows low cross-sample variance (0.15--0.36), suggesting the decoder learns to ignore uninformative encoder outputs and instead memorizes training patterns.
+  \item Variational encoding increases representation diversity (approximately 10$\times$ higher variance) but does not improve generalization—variance alone is insufficient.
+  \item Iterative encoding (ETRM-TRM) also fails, indicating the problem is not simply insufficient computation but the absence of a feedback signal during refinement.
+\end{itemize}
+
+These results highlight a fundamental asymmetry: TRM refines each puzzle embedding over hundreds of thousands of gradient updates during training, while we ask the encoder to extract equivalent information in a single forward pass with no task-specific supervision. The most promising path forward appears to be adding test-time optimization with self-supervised signals, as demonstrated by Latent Program Networks \cite{lpn}.
+

@@ -1,0 +1,109 @@
+% 02_background_and_related_work.tex
+% LaTeX version of Background and Related Work for Overleaf.
+% Requires bibliography keys: chollet2019, induction-transduction, hemens-taxonomy,
+% neurosymbolic, arc-prize-2024, arc-prize-2025, hrm, trm, trm-inductive, nvarc, lpn
+
+\section{Background and Related Work}
+\label{sec:background}
+
+\subsection{The ARC-AGI benchmark}
+
+The Abstraction and Reasoning Corpus (ARC) was introduced by Chollet \cite{chollet2019} as a benchmark designed to measure abstract reasoning and skill-acquisition efficiency in AI systems. Unlike most machine learning benchmarks that test interpolation within a training distribution, ARC explicitly requires out-of-distribution generalization: the hidden test set contains tasks that follow different underlying rules than those seen during training.
+
+Each ARC task consists of 2--5 demonstration pairs showing an input grid and its corresponding output grid, followed by 1--2 test inputs for which the system must predict the output. Grids can be up to $30\times30$ cells, with each cell containing one of 10 possible values (typically rendered as colors). The demonstration pairs implicitly specify a transformation rule, and the challenge is to infer this rule and apply it correctly to novel test inputs. Figure~\ref{fig:arc-example} shows an example task where the rule involves extracting and recoloring a shape.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.8\linewidth]{arc-puzzles.png}
+  \caption{Example ARC puzzles. Each task shows 2--5 demonstration pairs and test inputs requiring the model to infer and apply the transformation rule.}
+  \label{fig:arc-example}
+\end{figure}
+
+ARC is challenging for two reasons. First, every task follows a different underlying logic—there is no single algorithm that solves all tasks. Second, compute efficiency is an explicit goal: competition submissions must operate within fixed hardware constraints and capped time budgets, preventing brute-force scaling as a solution strategy. Chollet argues that solving ARC requires ``core knowledge priors'' such as objectness, elementary physics (cohesion, persistence), goal-directedness, basic numerics, and elementary geometry and topology \cite{chollet2019}.
+
+\subsection{Framing ARC as program synthesis}
+
+A productive way to understand ARC is through the lens of program synthesis: given demonstration input--output pairs, find the shortest program $P$ such that $P(\text{input})=\text{output}$ for all demonstrations \cite{induction-transduction}. This framing unifies disparate approaches and clarifies trade-offs.
+
+Following Li et al. and Hemens \cite{induction-transduction,hemens-taxonomy}, we organize approaches along three orthogonal axes inspired by neurosymbolic programming \cite{neurosymbolic}:
+
+\begin{description}
+  \item[Inference mode -- Induction vs.\ Transduction:] Inductive approaches first infer an explicit program or rule from demonstrations, then execute it on test inputs (interpretable but requires program search). Transductive approaches directly predict test outputs from demonstrations and test inputs without constructing an intermediate program (implicit rule in activations). Li et al.\ report a ``skill split'': induction excels at counting and long-horizon logic, while transduction handles noisy inputs and gestalt/topological reasoning better \cite{induction-transduction}.
+  \item[Program representation -- Discrete vs.\ Continuous:] Discrete representations (DSLs, code) offer precision and compositionality but are non-differentiable and suffer combinatorial search. Continuous representations (neural weights, latent vectors, learned embeddings) enable gradient-based optimization but sacrifice formal guarantees \cite{neurosymbolic}.
+  \item[Program search -- Heuristic vs.\ Learned:] Hand-crafted heuristics (enumeration, MDL) are efficient when engineered; gradient-based search and learned search procedures (recursive refinement, thinking models) leverage differentiability and data-driven discovery but can get stuck in local optima \cite{hemens-taxonomy}.
+\end{description}
+
+ETRM (this work) sits in the transductive, continuous, learned-search region: encoder-derived latent vectors decoded by a recursive refinement decoder (Section~\ref{sec:method}).
+
+\subsection{Overview of approaches to ARC}
+
+Table~\ref{tab:taxonomy} summarizes major ARC approaches by program representation and search strategy.
+
+\begin{table}[ht]
+  \centering
+  \caption{Taxonomy of ARC approaches by program representation and search strategy.}
+  \label{tab:taxonomy}
+  \begin{tabular}{p{0.28\linewidth} p{0.32\linewidth} p{0.28\linewidth}}
+    \hline
+    Approach & Program representation & Program search \\
+    \hline
+    DSL search (Icecuber) & Discrete (custom DSL) & Hand-crafted heuristics \\
+    LLM program synthesis & Discrete (Python) & LLM sampling + refinement \\
+    LLM + TTT (ARChitects, NVARC) & Neural (weights + prompt) & Gradient-based (SGD) \\
+    Latent Program Networks & Neural (latent vector) & Gradient-based (test-time) \\
+    TRM/HRM & Neural (puzzle embedding) & Learned (recursive decoder) \\
+    Thinking models & Neural (weights + thinking tokens) & Learned (implicit search) \\
+    \hline
+  \end{tabular}
+\end{table}
+
+Recent ARC Prize analyses \cite{arc-prize-2024,arc-prize-2025} highlighted test-time adaptation and refinement loops as central themes: static-inference transduction solutions rarely exceed 11\% accuracy, while test-time training and adaptation push scores far higher. Ensembling inductive and transductive strategies and aggressive data augmentation with voting are common practical tactics.
+
+As of January 2026, frontier LLMs with extended thinking achieve 45--54\% on ARC-AGI-2, while specialized solutions combining test-time training and TRM components (e.g., NVARC) demonstrated strong cost/accuracy trade-offs \cite{arc-prize-2025}.
+
+\subsection{Hierarchical and recursive reasoning models}
+
+\subsubsection{HRM: Hierarchical Reasoning Model}
+
+Wang et al.'s HRM \cite{hrm} introduced a brain-inspired architecture with two coupled recurrent modules operating at different timescales. A high-level module reasons about abstract structure and strategy, while a low-level module executes pixel-level transformations. Hierarchical convergence—fast inner-loop convergence reset by slow high-level updates—yields effective computational depth while maintaining stability. HRM reported strong performance with modest parameter counts.
+
+\subsubsection{TRM: Tiny Recursive Model}
+
+Jolicoeur-Martineau's TRM \cite{trm} simplified HRM into a compact 2-layer recursive model (7M parameters) that achieves competitive ARC performance by iteratively refining a predicted solution using latent reasoning states. TRM conditions on tasks via a puzzle\_id embedding table, which we analyze as a source of memorization (Section~\ref{sec:introduction}).
+
+\subsubsection{TRM as a refinement loop}
+
+Refinement loops—iteratively transforming candidate programs or outputs using feedback—emerged as a dominant paradigm in ARC progress \cite{arc-prize-2025}. TRM's recursive updates with deep supervision are a clear example of this pattern.
+
+\subsubsection{The memorization problem}
+
+Analyses revealed a critical limitation: when puzzle\_id embeddings are removed or randomized, TRM/HRM accuracy collapses to near-zero \cite{trm-inductive,arc-prize-2025}. Empirical evidence shows substantial memorization of task-specific mappings rather than extraction of general transformation rules. Scaling the embedding table to very large synthetic datasets incurs massive memory costs (e.g., NVARC reports an infeasible 51B parameter requirement for naive scaling) \cite{nvarc}.
+
+\subsection{Latent Program Networks}
+
+Latent Program Networks (LPN) \cite{lpn} learn a continuous latent space of implicit programs via an encoder--decoder architecture. The encoder maps demonstration pairs to a latent program vector; the decoder executes that latent program on test inputs. Crucially, LPN applies test-time gradient search in latent space (using leave-one-out loss on demos) to refine the latent representation, substantially improving out-of-distribution performance at the cost of expensive test-time optimization.
+
+\subsection{Positioning ETRM}
+
+TRM, LPN, and ETRM share a continuous-vector program representation but differ in how that representation is obtained and searched. TRM relies on learned lookup embeddings, LPN uses an encoder plus gradient-based test-time search, and ETRM computes encoder-derived representations decoded by a learned recursive decoder without test-time gradient updates (Section~\ref{sec:method}). Table~\ref{tab:compare} compares these approaches.
+
+\begin{table}[ht]
+  \centering
+  \caption{Comparison of TRM, LPN, and ETRM along taxonomy axes.}
+  \label{tab:compare}
+  \begin{tabular}{p{0.22\linewidth} p{0.22\linewidth} p{0.22\linewidth} p{0.22\linewidth}}
+    \hline
+    Aspect & TRM & LPN & ETRM (Ours) \\
+    \hline
+    Program representation & Continuous (embedding) & Continuous (latent vector) & Continuous (latent vector) \\
+    How obtained & Learned lookup & Encoder & Encoder \\
+    Program search & Learned (recursive decoder) & Gradient-based & Learned (recursive decoder) \\
+    Processes demos at test time & No & Yes & Yes \\
+    Test-time optimization & No & Yes (gradient ascent) & No \\
+    Can generalize to unseen tasks & No & Yes & Yes (goal) \\
+    \hline
+  \end{tabular}
+\end{table}
+
+ETRM aims to combine LPN's ability to compute task representations from demonstrations with TRM's efficient learned search, replacing puzzle\_id lookup with an encoder that enables true few-shot generalization while avoiding costly test-time optimization.
+

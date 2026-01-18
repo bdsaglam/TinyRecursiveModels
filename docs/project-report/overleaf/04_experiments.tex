@@ -1,0 +1,156 @@
+% Section 4: Experiments
+\section{Experiments}
+
+We evaluate ETRM's ability to generalize to puzzles whose demonstrations were never seen during training. Our experiments reveal a striking negative result: all encoder architectures achieve 0\% accuracy on held-out puzzles despite reasonable training performance, a phenomenon we attribute to encoder collapse.
+
+\subsection{Experimental setup}
+
+\subsubsection{Dataset}
+We train and evaluate on ARC-AGI-1, which contains 400 training puzzles and 400 evaluation puzzles \cite{chollet2019}. Following TRM \cite{trm}, we augment the training set with approximately 160 additional ``concept'' puzzles that target specific transformation primitives.
+
+\paragraph{Data augmentation.}
+Each puzzle is augmented roughly 1000$\times$ using:
+\begin{itemize}
+  \item Color permutation: random shuffle of colors 1--9 (black remains fixed).
+  \item Dihedral transforms: 8 geometric transformations (rotations and reflections).
+  \item Translation: random positioning within the 30$\times$30 grid (training only).
+\end{itemize}
+Augmentation is applied consistently to all components of a puzzle (demonstrations and test queries), preserving the transformation rule's structure.
+
+\paragraph{True few-shot evaluation.}
+A key distinction between ETRM and TRM evaluation is data separation. In TRM, evaluation puzzle identifiers exist in the embedding matrix and receive gradient updates during training—the model has effectively ``seen'' those puzzles \cite{hrm-analysis}. In ETRM we enforce strict separation: evaluation puzzle demonstrations are \emph{never} seen during training. The encoder must extract transformation rules from demonstrations encountered for the first time at test time; this is true few-shot evaluation.
+
+\begin{table}[ht]
+  \centering
+  \caption{Dataset split summary}
+  \begin{tabular}{lrrr}
+    \toprule
+    Split & Puzzle Groups & Augmentation Factor & Total Samples \\
+    \midrule
+    Training & $\sim$560 (training + concept) & $\sim$1000$\times$ & $\sim$560,000 \\
+    Evaluation & $\sim$400 (evaluation) & $\sim$1000$\times$ & $\sim$400,000 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsubsection{Evaluation protocol}
+
+\paragraph{Metrics.} We report Pass@k accuracy, where a puzzle is considered solved if the correct answer appears among the top-$k$ most common predictions. We report Pass@1 (primary), Pass@2 and Pass@5.
+
+\paragraph{Voting mechanism.} Following TRM \cite{trm}, we aggregate predictions across all augmented versions of each puzzle ($\sim$1000 per puzzle). Each augmented version produces a prediction which is inverse-transformed back to the original coordinate space; final prediction is determined by majority voting.
+
+\paragraph{Subset evaluation.} Due to computational constraints, we evaluate on a subset of 32 puzzle groups (about 8\% of the full evaluation set). Evaluating the full set requires $\sim$24 hours per model since voting aggregates $\sim$1000 augmentations per puzzle. Although subset evaluation reduces statistical power, the contrast between 0\% and $\sim$37\%+ Pass@1 is large and informative.
+
+\subsubsection{Training configuration}
+
+\paragraph{Decoder initialization.} The decoder is initialized from pretrained TRM weights, providing a capable recursive reasoning module. The decoder is \emph{not} frozen—gradients flow through all decoder parameters during training—so failures to generalize cannot be attributed to a frozen decoder.
+
+\paragraph{Hyperparameters.} Batch size is 256 for deterministic and iterative encoders, reduced to 128 for the Cross-Attention VAE due to memory constraints. ACT maximum steps is 16 with exploration probability 0.5. We re-encode the full batch at every ACT step to ensure adequate gradient flow to the encoder.
+
+\begin{table}[ht]
+  \centering
+  \caption{Training hyperparameters}
+  \begin{tabular}{lccc}
+    \toprule
+    Parameter & Deterministic & Variational & Iterative \\
+    \midrule
+    Batch size & 256 & 128 & 256 \\
+    Learning rate & 1e-4 & 1e-4 & 1e-4 \\
+    ACT max steps & 16 & 16 & 16 \\
+    Grad clip norm & 1.0 & 1.0 & 1.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Computational resources.} Experiments ran on a server with 4 NVIDIA A100 80GB GPUs using PyTorch distributed data-parallel (torchrun). Each ETRM variant required $\sim$12--24 hours to reach 175k training steps; the TRM baseline converged in $\sim$48 hours (518k steps).
+
+\subsection{TRM baseline}
+We reproduce TRM training to establish a baseline. Results at two checkpoints are shown in Table~\ref{tab:trm-results}.
+
+\begin{table}[ht]
+  \centering
+  \caption{TRM baseline results}
+  \label{tab:trm-results}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Model & Params & Pass@1 & Pass@2 & Pass@5 & Train Acc \\
+    \midrule
+    TRM (155k steps) & 7M & 37.38\% & 41.25\% & 47.12\% & 92.50\% \\
+    TRM (converged) & 7M & 41.75\% & 48.75\% & 52.25\% & 98.44\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{ETRM results}
+We evaluate three encoder architectures (Section~3.3): deterministic feedforward, Cross-Attention VAE, and iterative TRM-style encoder. Results appear in Table~\ref{tab:etrm-results}.
+
+\begin{table}[ht]
+  \centering
+  \caption{ETRM results}
+  \label{tab:etrm-results}
+  \begin{tabular}{llrrrr}
+    \toprule
+    Model & Encoder Type & Params & Pass@1 & Pass@2 & Train Acc \\
+    \midrule
+    ETRM-Deterministic & Feedforward Deterministic & 22M & 0.00\% & 0.50\% & 78.91\% \\
+    ETRM-Variational & Cross-Attn VAE & 23M & 0.00\% & 0.00\% & 40.62\% \\
+    ETRM-Iterative & Iterative TRM-style & 15M & 0.00\% & 0.25\% & 51.17\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+All three encoder architectures achieve 0\% Pass@1 on held-out puzzles despite substantial training accuracy, indicating a complete generalization failure.
+
+\subsection{Analysis}
+
+\subsubsection{Training dynamics}
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.8\linewidth]{training_curves.png}
+  \caption{Training accuracy over time for TRM and ETRM variants.}
+\end{figure}
+TRM reaches $\sim$98\% training accuracy; ETRM variants plateau at substantially lower accuracies (Feedforward: 79\%, Iterative: 51\%, VAE: 41\%).
+
+\subsubsection{Encoder collapse}
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.8\linewidth]{encoder_collapse.png}
+  \caption{Encoder output statistics: cross-sample variance, within-sample variance, and distributions.}
+\end{figure}
+We measure cross-sample variance of encoder outputs to quantify how different outputs are across puzzles. Low variance indicates collapse to near-constant representations.
+
+\begin{table}[ht]
+  \centering
+  \caption{Encoder collapse analysis}
+  \begin{tabular}{lrl}
+    \toprule
+    Model & Cross-Sample Variance & Interpretation \\
+    \midrule
+    ETRM-Deterministic & 0.36 & Low --- collapsed \\
+    ETRM-Variational & 3.33 & Higher (KL prevents full collapse) \\
+    ETRM-Iterative & 0.15 & Very low --- severely collapsed \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+With collapsed encoder outputs the decoder receives essentially the same task representation for every puzzle, preventing puzzle-specific behavior and explaining the 0\% test accuracy despite nontrivial training accuracy.
+
+\subsubsection{Qualitative examples}
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{qualitative_combined.png}
+  \caption{Predictions on held-out puzzles: Input, Ground Truth, ETRM-Deterministic prediction, and TRM prediction.}
+\end{figure}
+ETRM produces structured but incorrect transformations on held-out puzzles; TRM (with embeddings) produces correct predictions, indicating the decoder is capable given appropriate task context.
+
+\subsubsection{Key findings}
+\begin{enumerate}
+  \item Complete generalization failure: all ETRM variants obtain 0\% Pass@1 on held-out puzzles despite 41--79\% training accuracy.
+  \item Encoder collapse explains the failure: encoders produce near-constant outputs across different puzzles.
+  \item Architecture-agnostic failure: feedforward, variational, and iterative encoders all fail similarly.
+  \item Training-test gap: the model memorizes training puzzle mappings rather than extracting generalizable rules.
+  \item Contrast with TRM: TRM achieves $\sim$37\% Pass@1 at comparable training time by memorizing embeddings; the decoder can solve puzzles when given appropriate task context.
+\end{enumerate}
+
+Replacing learned embeddings with a demonstration encoder is a natural idea for enabling generalization, but our experiments show this is substantially harder than expected: the encoder consistently collapses to constant outputs rather than learning to extract transformation rules. Understanding and preventing this collapse is essential for progress on encoder-based few-shot program induction.
+

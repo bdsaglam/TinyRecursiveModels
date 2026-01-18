@@ -1,0 +1,312 @@
+% 03_method.tex
+% LaTeX version of Method section for Overleaf.
+% Requires bibliography keys: trm, transformer, set-transformer, vae, act, lpn
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Overview: From memorization to generalization}
+
+The Tiny Recursive Model (TRM) \cite{trm} achieves strong performance on ARC-AGI through recursive reasoning with deep supervision. However, TRM relies on a learned embedding matrix that maps puzzle identifiers to task-specific representations. Critically, this embedding matrix includes entries for \emph{both} training and evaluation puzzles—their embeddings receive gradient updates during training even though their test queries are held out. This design choice means TRM cannot solve puzzles without corresponding embeddings, fundamentally limiting it to interpolation rather than true generalization.
+
+We propose \textbf{Encoder-based TRM (ETRM)}, which replaces the embedding lookup with a neural encoder that computes task representations from demonstration input--output pairs at inference time. This modification transforms TRM from a memorization-based system into one capable of few-shot learning:
+
+\begin{align}
+\text{TRM:}\quad & \mathbf{c} = \text{EmbeddingMatrix}[\text{puzzle\_id}] \\
+\text{ETRM:}\quad & \mathbf{c} = \text{Encoder}\big(\{(\mathbf{x}_i^{\text{in}},\mathbf{x}_i^{\text{out}})\}_{i=1}^K\big)
+\end{align}
+
+where $\mathbf{c}\in\mathbb{R}^{T\times D}$ is the task context ($T=16$ tokens, $D=512$ dimensions), and $K$ is the number of demonstration pairs. The encoder learns to extract transformation rules from demonstrations, enabling generalization to puzzles not seen during training. We preserve TRM's decoder architecture unchanged \cite{trm}; only the task-context source is modified.
+
+\subsection{Background: TRM architecture}
+
+\subsubsection{Task context via puzzle embedding lookup}
+
+TRM obtains task context through a learned embedding matrix indexed by puzzle identifier. Pseudocode:
+
+\begin{verbatim}
+# TRM: Task context from embedding lookup
+def trm_get_context(puzzle_id):
+    # puzzle_emb: learned matrix of shape (num_puzzles, T, D)
+    # Includes entries for ALL puzzles (training AND evaluation)
+    return puzzle_emb[puzzle_id]  # Returns (T, D) context
+\end{verbatim}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.75\linewidth]{trm.png}
+  \caption{TRM architecture: task context is obtained via embedding matrix lookup indexed by puzzle ID.}
+  \label{fig:trm-arch}
+\end{figure}
+
+The embedding matrix must include an entry for every puzzle the model will encounter. Since evaluation puzzle IDs receive gradient updates during training, TRM cannot generalize to truly unseen puzzles—it effectively memorizes task-specific mappings.
+
+\subsubsection{Dual-state recursive reasoning}
+
+Given task context, TRM maintains two latent states that are iteratively refined:
+\begin{itemize}
+  \item $\mathbf{y}$: current predicted solution (embedded)
+  \item $\mathbf{z}$: latent reasoning state
+\end{itemize}
+
+Pseudocode for the forward pass:
+
+\begin{verbatim}
+def trm_forward(x, puzzle_id, y, z, H_cycles=3, L_cycles=6):
+    # Get task context via embedding lookup (not from demos!)
+    c = puzzle_emb[puzzle_id]         # <-- The limitation
+
+    input_emb = embed(x) + c          # Add task context to input
+
+    for h in range(H_cycles):
+        for l in range(L_cycles):
+            z = f_theta(z, y + input_emb)  # Refine reasoning
+        y = f_theta(y, z)                   # Update solution
+
+    return y, z
+\end{verbatim}
+
+The network $f_\theta$ is a small 2-layer transformer \cite{transformer}. Recursive application creates an effective depth of $H\times(L+1)\times 2 = 42$ layers.
+
+\subsubsection{Deep supervision with adaptive computation}
+
+TRM uses deep supervision: the carry state $(\mathbf{y},\mathbf{z})$ persists across training steps, with supervision applied at each recursion. A Q-head implements Adaptive Computation Time (ACT) \cite{act} to learn halting; during training an exploration probability $p_{\text{explore}}$ encourages continued computation sometimes.
+
+\subsection{Encoder architectures}
+
+We study three encoder paradigms, each reflecting a different hypothesis about effective task representation.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.8\linewidth]{etrm.png}
+  \caption{ETRM architecture: task context is computed from demonstration pairs via a neural encoder, replacing the embedding lookup.}
+  \label{fig:etrm-arch}
+\end{figure}
+
+\subsubsection{Feedforward deterministic encoder}
+
+Hypothesis: a single forward pass through a feedforward encoder can extract sufficient information from demos to characterize the transformation rule.
+
+The encoder has two stages:
+
+Stage 1 -- Per-demo grid encoding. Each demo pair $(\mathbf{x}_i^{\text{in}},\mathbf{x}_i^{\text{out}})$ is encoded independently by concatenating input and output grids and processing with a transformer:
+
+\[
+\mathbf{h}_i = \text{TransformerEnc}\big([\mathbf{x}_i^{\text{in}};\mathbf{x}_i^{\text{out}}]\big)\in\mathbb{R}^{2S\times D}
+\]
+
+with $S=900$ (flattened 30$\times$30 grid). Pool to a single vector:
+
+\[
+\mathbf{e}_i = \text{MeanPool}(\mathbf{h}_i \odot \mathbf{m}_i)\in\mathbb{R}^D
+\]
+
+where $\mathbf{m}_i$ masks padding tokens.
+
+Stage 2 -- Set aggregation via cross-attention. Aggregate the $K$ demo encodings $\{\mathbf{e}_i\}_{i=1}^K$ using learnable query tokens \cite{set-transformer}:
+
+\[
+\mathbf{c} = \text{CrossAttn}(\mathbf{Q}, \mathbf{E}, \mathbf{E}) \in \mathbb{R}^{T\times D}
+\]
+
+where $\mathbf{Q}\in\mathbb{R}^{T\times D}$ are $T=16$ learnable queries and $\mathbf{E}\in\mathbb{R}^{K\times D}$ stacks demo encodings.
+
+Pseudocode:
+
+\begin{verbatim}
+def deterministic_encoder(demo_inputs, demo_outputs, demo_mask):
+    # Stage 1: Encode each demo pair
+    B, K, S = demo_inputs.shape
+    encodings = []
+    for i in range(K):
+        h = transformer_enc(concat(demo_inputs[:,i], demo_outputs[:,i]))
+        e = mean_pool(h, mask=demo_mask[:,i])
+        encodings.append(e)
+    E = stack(encodings, dim=1)  # (B, K, D)
+
+    # Stage 2: Cross-attention aggregation
+    Q = learnable_queries.expand(B, -1, -1)  # (B, T, D)
+    context = cross_attention(Q, E, E, mask=demo_mask)
+    return context  # (B, T, D)
+\end{verbatim}
+
+\subsubsection{Feedforward variational encoder}
+
+Hypothesis: A variational bottleneck promotes a structured latent space of transformation rules that may improve generalization.
+
+We study two variants.
+
+\paragraph{Cross-attention VAE.} Apply variational bottleneck after aggregating demos:
+\begin{enumerate}
+  \item Encode each demo with a deep transformer (8 layers).
+  \item Aggregate via cross-attention.
+  \item Pool and project to variational parameters:
+    \[
+      \boldsymbol{\mu},\ \log\boldsymbol{\sigma}^2 = \text{MLP}(\text{MeanPool}(\mathbf{c}))
+    \]
+  \item Sample via reparameterization \cite{vae}:
+    \[
+      \mathbf{z} = \boldsymbol{\mu} + \boldsymbol{\sigma}\odot\boldsymbol{\epsilon},\quad \boldsymbol{\epsilon}\sim\mathcal{N}(\mathbf{0},\mathbf{I})
+    \]
+  \item Decode to context shape:
+    \[
+      \mathbf{c} = \text{Reshape}(\text{Linear}(\mathbf{z}))\in\mathbb{R}^{T\times D}
+    \]
+\end{enumerate}
+
+KL regularization:
+\[
+\mathcal{L}_{\text{KL}} = D_{\text{KL}}(q(\mathbf{z}\mid\text{demos})\|p(\mathbf{z})) = -\tfrac{1}{2}\sum_j\big(1+\log\sigma_j^2-\mu_j^2-\sigma_j^2\big)
+\]
+
+\paragraph{Per-demo VAE.} Inspired by LPN \cite{lpn}, apply variational inference per demo:
+\begin{enumerate}
+  \item Encode each demo with a shallow transformer (2 layers, 128 hidden).
+  \item Project each encoding to per-demo variational parameters:
+    \[
+      \boldsymbol{\mu}_i,\ \log\boldsymbol{\sigma}_i^2 = \text{Linear}(\mathbf{e}_i)
+    \]
+  \item Sample per-demo latents $\mathbf{z}_i=\boldsymbol{\mu}_i+\boldsymbol{\sigma}_i\odot\boldsymbol{\epsilon}_i$.
+  \item Aggregate via mean pooling: $\bar{\mathbf{z}}=\tfrac{1}{K}\sum_{i=1}^K\mathbf{z}_i$.
+  \item Project to context: $\mathbf{c}=\text{Reshape}(\text{Linear}(\bar{\mathbf{z}}))$.
+\end{enumerate}
+
+KL loss averages across valid demos:
+\[
+\mathcal{L}_{\text{KL}} = \tfrac{1}{K}\sum_{i=1}^K D_{\text{KL}}(q(\mathbf{z}_i\mid\mathbf{x}_i,\mathbf{y}_i)\|p(\mathbf{z}))
+\]
+
+Cross-attention VAE captures cross-demo patterns; per-demo VAE is simpler but may lose demo interactions. We adopt LPN's encoder design for comparison but \emph{do not} use test-time gradient search; our encoders produce fixed representations.
+
+\subsubsection{Iterative encoder (joint encoder--decoder refinement)}
+
+Hypothesis: Recursive refinement that benefits the decoder might also benefit the encoder. The iterative encoder mirrors TRM's decoder structure.
+
+Encoder maintains dual latent states:
+\begin{itemize}
+  \item $\mathbf{z}_e^H$: high-level context (serves as decoder input)
+  \item $\mathbf{z}_e^L$: low-level reasoning state
+\end{itemize}
+
+Hierarchical refinement (ACT-style) pseudocode:
+
+\begin{verbatim}
+def iterative_encoder_step(z_e_H, z_e_L, demo_input, H_cycles, L_cycles):
+    # demo_input: aggregated demo representation
+
+    for h in range(H_cycles):
+        for l in range(L_cycles):
+            z_e_L = L_level(z_e_L, z_e_H + demo_input)
+        z_e_H = L_level(z_e_H, z_e_L)
+
+    return z_e_H, z_e_L  # z_e_H is context for decoder
+\end{verbatim}
+
+Unlike feedforward encoders, the iterative encoder's carry state persists across ACT steps. The encoder refines its understanding as the decoder refines its prediction—a form of joint reasoning.
+
+\subsection{Integration with TRM decoder}
+
+For all encoder types, integration follows:
+\begin{enumerate}
+  \item \textbf{Context injection:} encoder output $\mathbf{c}\in\mathbb{R}^{T\times D}$ replaces puzzle embedding.
+  \item \textbf{Position concatenation:} context is prepended to input token embeddings.
+  \item \textbf{Forward pass:} combined representation flows through TRM's recursive reasoning.
+\end{enumerate}
+
+Decoder architecture remains as in TRM \cite{trm}: dual-state design ($\mathbf{y},\mathbf{z}$), H/L cycles, ACT halting, and deep supervision.
+
+\subsection{Training protocol}
+
+\subsubsection{Strict train/evaluation separation}
+
+We enforce full data separation:
+
+\begin{tabular}{l l l}
+\hline
+Split & Puzzles & Purpose \\
+\hline
+Training & $\sim$560 groups (ARC-AGI training + concept) & Model training \\
+Evaluation & $\sim$400 groups (ARC-AGI evaluation) & Testing generalization \\
+\hline
+\end{tabular}
+
+Evaluation puzzles' demonstrations are never seen during training; the encoder must extract rules at test time.
+
+\subsubsection{Data augmentation}
+
+Following TRM, we apply $\approx$1000 augmented versions per puzzle:
+\begin{itemize}
+  \item Color permutation: random shuffle of colors 1--9 (black=0 fixed)
+  \item Dihedral transforms: 8 geometric transforms (4 rotations $\times$ 2 reflections)
+  \item Translation: random positioning within 30$\times$30 grid (training only)
+\end{itemize}
+
+The same augmentation is applied to all components of a puzzle (demos and tests) to preserve the transformation structure.
+
+\subsubsection{Encoder re-encoding: solving gradient starvation}
+
+We discovered an issue when caching encoder outputs. With dynamic halting, only samples that reset received fresh encoder outputs (~2\% per step), so the encoder received gradients from only 2\% of data, stunting learning. Training accuracy plateaued around 35\%.
+
+Solution: re-encode the full batch at every ACT step (no caching). Pseudocode:
+
+\begin{verbatim}
+def forward_step(carry, batch):
+    # ALWAYS encode - no caching
+    context = encoder(batch['demo_inputs'],
+                     batch['demo_outputs'],
+                     batch['demo_mask'])
+
+    # Proceed with decoder...
+    output = decoder(carry, batch['inputs'], context)
+    return output
+\end{verbatim}
+
+This ensures 100\% gradient coverage for the encoder at the cost of extra computation. After this fix, training accuracy rose from 35\% to over 86\%.
+
+\subsubsection{Pretrained decoder initialization}
+
+We initialize the decoder from TRM's pretrained weights, providing:
+\begin{enumerate}
+  \item Faster convergence: decoder already knows recursive refinement for ARC tasks.
+  \item Encoder focus: encoder can concentrate on learning representations.
+\end{enumerate}
+
+We explore two modes:
+\begin{itemize}
+  \item Frozen decoder: only encoder updated (faster, ensures encoder learns).
+  \item Joint fine-tuning: both encoder and decoder updated (potentially better final performance).
+\end{itemize}
+
+\subsubsection{Variational training}
+
+For VAE encoders, the training loss is:
+\[
+\mathcal{L} = \mathcal{L}_{\text{CE}} + \beta\cdot\mathcal{L}_{\text{KL}}
+\]
+
+Practical considerations:
+\begin{itemize}
+  \item KL annealing: start $\beta=0$, gradually increase.
+  \item Numerical stability: clamp $\log\sigma^2\in[-10,10]$.
+  \item Evaluation: use mean $\boldsymbol{\mu}$ without sampling for deterministic evaluation.
+\end{itemize}
+
+\subsection{Design space summary}
+
+\begin{table}[ht]
+  \centering
+  \caption{Encoder architecture design space}
+  \begin{tabular}{p{0.28\linewidth} p{0.2\linewidth} p{0.18\linewidth} p{0.18\linewidth} p{0.18\linewidth}}
+    \hline
+    Encoder type & Aggregation & Variational & Parameters & Key property \\
+    \hline
+    Feedforward deterministic & Cross-attention & No & $\sim$15M & Simple, stable baseline \\
+    Cross-attention VAE & Cross-attention & Post-aggregation & $\sim$16M & Regularized latent space \\
+    Per-demo VAE & Mean & Per-demo & $\sim$1M & LPN-inspired, compact \\
+    Iterative (TRM-style) & Mean & No & $\sim$8M & Joint refinement with decoder \\
+    \hline
+  \end{tabular}
+\end{table}
+
+Each architecture embodies hypotheses: cross-attention vs.\ mean pooling, variational vs.\ deterministic, iterative vs.\ feedforward. We evaluate these empirically in Section~\ref{sec:results}.
+

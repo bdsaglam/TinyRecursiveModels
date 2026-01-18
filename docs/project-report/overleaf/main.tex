@@ -1,0 +1,71 @@
+% main.tex - Master document for ETRM Project Report
+% Compile with pdflatex + bibtex (or use Overleaf's default compiler)
+
+\documentclass[11pt,a4paper]{article}
+
+% ============================================
+% Packages
+% ============================================
+
+% Page geometry
+\usepackage[margin=1in]{geometry}
+
+% Typography and encoding
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% Math
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+
+% Graphics and figures
+\usepackage{graphicx}
+\graphicspath{{figures/}}  % Look for figures in the figures/ folder
+\usepackage{float}
+
+% Tables
+\usepackage{booktabs}
+\usepackage{array}
+
+% Lists
+\usepackage{enumitem}
+
+% Code listings
+\usepackage{verbatim}
+
+% Bibliography (load before hyperref)
+\usepackage{natbib}
+\bibliographystyle{plainnat}
+
+% Hyperlinks (load last for compatibility)
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+
+% ============================================
+% Document metadata
+% ============================================
+
+\title{ETRM: Encoder-based Tiny Recursive Models\\for Few-Shot Abstract Reasoning}
+\author{Bar{\i}\c{s} Deniz Sa\u{g}lam\\1558410}
+\date{\today}
+
+% ============================================
+% Document content
+% ============================================
+
+\begin{document}
+
+\maketitle
+
+% Include sections
+\input{01_introduction}
+\input{02_background_and_related_work}
+\input{03_method}
+\input{04_experiments}
+\input{05_discussion}
+
+% Bibliography
+\bibliography{references}
+
+\end{document}
