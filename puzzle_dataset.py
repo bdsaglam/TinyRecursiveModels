@@ -185,6 +185,11 @@ class PuzzleDataset(IterableDataset):
         for set_i, (set_name, dataset) in enumerate(self._data.items()):  # type: ignore
             total_examples = len(dataset["inputs"])
 
+            if self.config.max_groups is not None:
+                num_groups = min(self.config.max_groups, dataset["group_indices"].size - 1)
+                num_puzzles = int(dataset["group_indices"][num_groups])
+                total_examples = int(dataset["puzzle_indices"][num_puzzles])
+
             # Load examples one by one
             start_index = 0
             while start_index < total_examples:

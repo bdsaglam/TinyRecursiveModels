@@ -1,26 +1,20 @@
 """
-Standalone evaluation script for ETRM/ETRMTRM checkpoints.
+Standalone evaluation script for original TRM checkpoints.
 
 Evaluates a trained checkpoint on the full test set (or subset).
+Uses PuzzleDataset (non-encoder mode).
 
 Usage:
-    # Evaluate ETRM checkpoint on full test set
-    python evaluate_checkpoint.py \
-        --checkpoint checkpoints/etrm-final/F1_standard/step_50000/model.pt \
-        --config-name cfg_pretrain_etrm_arc_agi_1 \
-        --model-type etrm
-
-    # Evaluate ETRMTRM checkpoint
-    python evaluate_checkpoint.py \
-        --checkpoint checkpoints/etrm-final/F3_etrmtrm/step_50000/model.pt \
-        --config-name cfg_pretrain_etrmtrm_arc_agi_1 \
-        --model-type etrmtrm
+    # Evaluate TRM checkpoint on full test set
+    python evaluate_trm_checkpoint.py \
+        --checkpoint checkpoints/Arc1concept-aug-1000-ACT-torch/pretrain_att_arc1concept_4/step_50000 \
+        --config-name cfg_pretrain_arc_agi_1
 
     # Limit to N puzzle groups for quick test
-    python evaluate_checkpoint.py ... --max-eval-groups 32
+    python evaluate_trm_checkpoint.py ... --max-eval-groups 32
 
     # Multi-GPU evaluation
-    torchrun --nproc-per-node 4 evaluate_checkpoint.py ...
+    torchrun --nproc-per-node 4 evaluate_trm_checkpoint.py ...
 """
 
 import os
@@ -41,31 +35,27 @@ from hydra.core.global_hydra import GlobalHydra
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from dataset.fewshot_puzzle_dataset import FewShotPuzzleDataset, FewShotPuzzleDatasetConfig
+from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig
 from dataset.common import PuzzleDatasetMetadata
 from evaluators.arc import ARC
 from utils.functions import load_model_class
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate ETRM/ETRMTRM checkpoint")
+    parser = argparse.ArgumentParser(description="Evaluate TRM checkpoint")
     parser.add_argument(
         "--checkpoint", type=str, required=True,
-        help="Path to model checkpoint (model.pt file)"
+        help="Path to model checkpoint (step_* file)"
     )
     parser.add_argument(
-        "--config-name", type=str, required=True,
-        help="Hydra config name (e.g., cfg_pretrain_etrm_arc_agi_1)"
+        "--config-name", type=str, default="cfg_pretrain_arc_agi_1",
+        help="Hydra config name (default: cfg_pretrain_arc_agi_1)"
     )
     parser.add_argument(
         "--use-checkpoint-config",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Use all_config.yaml from checkpoint directory when available (default: true)"
-    )
-    parser.add_argument(
-        "--model-type", type=str, choices=["etrm", "etrmtrm"], default="etrm",
-        help="Model type: etrm or etrmtrm"
     )
     parser.add_argument(
         "--max-eval-groups", type=int, default=None,
@@ -115,21 +105,20 @@ def _get_config_extras(cfg: Any, drop_keys: Optional[set[str]] = None) -> Dict[s
     return extras
 
 
-def _compute_fewshot_eval_counts(
+def _compute_trm_eval_counts(
     dataset_paths: list[str],
     sets: list[str],
     split: str,
     max_groups: Optional[int],
 ) -> tuple[int, int]:
     total_puzzles = 0
-    total_queries = 0
+    total_examples = 0
 
     for dataset_path in dataset_paths:
         split_dir = os.path.join(dataset_path, split)
         for set_name in sets:
             group_indices = np.load(os.path.join(split_dir, f"{set_name}__group_indices.npy"))
             puzzle_indices = np.load(os.path.join(split_dir, f"{set_name}__puzzle_indices.npy"))
-            num_demos = np.load(os.path.join(split_dir, f"{set_name}__num_demos.npy"))
 
             num_groups = group_indices.size - 1
             if max_groups is not None:
@@ -138,30 +127,32 @@ def _compute_fewshot_eval_counts(
             num_puzzles = int(group_indices[num_groups])
             total_puzzles += num_puzzles
 
-            puzzle_sizes = puzzle_indices[1:num_puzzles + 1] - puzzle_indices[:num_puzzles]
-            queries = puzzle_sizes - num_demos[:num_puzzles]
-            total_queries += int(np.maximum(queries, 0).sum())
+            example_counts = puzzle_indices[1:num_puzzles + 1] - puzzle_indices[:num_puzzles]
+            total_examples += int(example_counts.sum())
 
-    return total_puzzles, total_queries
+    return total_puzzles, total_examples
 
 
-def create_dataloader(config: Any, rank: int, world_size: int, max_eval_groups: Optional[int], batch_size: Optional[int] = None):
+def create_dataloader(
+    config: Any,
+    rank: int,
+    world_size: int,
+    max_eval_groups: Optional[int],
+    global_batch_size: Optional[int] = None,
+):
     """Create evaluation dataloader."""
     data_paths = config.data_paths_test if len(config.data_paths_test) > 0 else config.data_paths
+    effective_global_batch = global_batch_size if global_batch_size is not None else config.global_batch_size
 
-    # Use provided batch_size as global batch size, or fall back to config
-    global_batch_size = batch_size if batch_size is not None else config.global_batch_size
-
-    dataset = FewShotPuzzleDataset(
-        FewShotPuzzleDatasetConfig(
+    dataset = PuzzleDataset(
+        PuzzleDatasetConfig(
             seed=config.seed,
             dataset_paths=data_paths,
-            global_batch_size=global_batch_size,
+            global_batch_size=effective_global_batch,
             test_set_mode=True,
             epochs_per_iter=1,
             rank=rank,
             num_replicas=world_size,
-            max_demos=config.max_demos,
             max_groups=max_eval_groups,
         ),
         split="test",
@@ -179,13 +170,16 @@ def create_dataloader(config: Any, rank: int, world_size: int, max_eval_groups: 
     return dataloader, dataset.metadata
 
 
-def create_model(config: Any, metadata: PuzzleDatasetMetadata, model_type: str, world_size: int, batch_size: Optional[int] = None):
-    """Create model with loss head wrapper."""
-    # Use provided batch_size as global batch size, or fall back to config
-    global_batch_size = batch_size if batch_size is not None else config.global_batch_size
-    per_gpu_batch_size = global_batch_size // world_size
+def create_model(
+    config: Any,
+    metadata: PuzzleDatasetMetadata,
+    world_size: int,
+    global_batch_size: Optional[int] = None,
+):
+    """Create TRM model with loss head wrapper."""
+    effective_global_batch = global_batch_size if global_batch_size is not None else config.global_batch_size
+    per_gpu_batch_size = effective_global_batch // world_size
 
-    # Build model config
     model_cfg = dict(
         **_get_config_extras(config.arch, drop_keys={"name", "loss"}),
         batch_size=per_gpu_batch_size,
@@ -195,14 +189,9 @@ def create_model(config: Any, metadata: PuzzleDatasetMetadata, model_type: str, 
         causal=False,
     )
 
-    # Create base model from config
     model_cls = load_model_class(config.arch.name)
-    base_model = model_cls(model_cfg)
-
-    # Wrap with loss head
     loss_head_cls = load_model_class(config.arch.loss.name)
-    loss_kwargs = _get_config_extras(config.arch.loss, drop_keys={"name"})
-    model = loss_head_cls(base_model, **loss_kwargs)
+    model = loss_head_cls(model_cls(model_cfg), **_get_config_extras(config.arch.loss, drop_keys={"name"}))
 
     return model
 
@@ -219,6 +208,24 @@ def load_checkpoint(model: torch.nn.Module, checkpoint_path: str, rank: int):
         state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
     if any(k.startswith("module.") for k in state_dict.keys()):
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+
+    # Resize puzzle embedding if needed
+    puzzle_emb_name = "model.inner.puzzle_emb.weights"
+    if puzzle_emb_name in state_dict and hasattr(model, "model"):
+        inner = getattr(model, "model", None)
+        puzzle_emb = getattr(getattr(inner, "puzzle_emb", None), "weights", None)
+        if puzzle_emb is not None and state_dict[puzzle_emb_name].shape != puzzle_emb.shape:
+            expected_shape = puzzle_emb.shape
+            if rank == 0:
+                print(
+                    f"Resetting puzzle embedding due to shape mismatch. "
+                    f"Found {state_dict[puzzle_emb_name].shape}, expected {expected_shape}"
+                )
+            state_dict[puzzle_emb_name] = (
+                torch.mean(state_dict[puzzle_emb_name], dim=0, keepdim=True)
+                .expand(expected_shape)
+                .contiguous()
+            )
 
     model.load_state_dict(state_dict, strict=True)
 
@@ -263,15 +270,12 @@ def evaluate_model(
             elif rank == 0 and processed_batches % 10 == 0:
                 print(f"Processing batch {processed_batches}: {set_name}, total samples: {total_samples}")
 
-            # Move batch to GPU
             batch = {k: v.cuda() for k, v in batch.items()}
 
             with torch.autocast(device_type="cuda", dtype=autocast_dtype) if autocast_dtype else torch.inference_mode():
-                # Initialize carry
                 with torch.device("cuda"):
                     carry = model.initial_carry(batch)
 
-                # Forward until all halt
                 while True:
                     carry, loss, metrics, preds, all_finish = model(
                         carry=carry, batch=batch, return_keys=return_keys
@@ -280,7 +284,6 @@ def evaluate_model(
                     if all_finish:
                         break
 
-            # Update evaluator
             evaluator.update_batch(batch, preds)
 
             del carry, loss, preds, batch
@@ -292,9 +295,7 @@ def evaluate_model(
         print(f"Total samples evaluated: {total_samples}")
         print(f"Total batches: {processed_batches}")
 
-    # Get results (gather across ranks for distributed)
     results = evaluator.result(save_path=None, rank=rank, world_size=world_size)
-
     return results or {}
 
 
@@ -323,10 +324,9 @@ def main():
 
     if rank == 0:
         print(f"\n{'=' * 60}")
-        print("ETRM/ETRMTRM Checkpoint Evaluation")
+        print("TRM Checkpoint Evaluation")
         print(f"{'=' * 60}")
         print(f"Config: {args.config_name}")
-        print(f"Model type: {args.model_type}")
         print(f"Checkpoint: {args.checkpoint}")
         print(f"Max eval groups: {args.max_eval_groups or 'all'}")
         print(f"World size: {world_size}")
@@ -354,19 +354,19 @@ def main():
             displayed_groups = eval_metadata.total_groups
         print(f"  Num groups: {displayed_groups}")
         if args.max_eval_groups is not None:
-            total_puzzles, total_queries = _compute_fewshot_eval_counts(
+            total_puzzles, total_examples = _compute_trm_eval_counts(
                 dataset_paths=data_paths,
                 sets=eval_metadata.sets,
                 split="test",
                 max_groups=args.max_eval_groups,
             )
-            total_expected_samples = total_queries
+            total_expected_samples = total_examples
             print(f"  Num puzzles: {total_puzzles}")
-            print(f"  Total query examples: {total_queries}")
+            print(f"  Total examples: {total_examples}")
         print()
 
     # Create model
-    model = create_model(config, eval_metadata, args.model_type, world_size, args.global_batch_size)
+    model = create_model(config, eval_metadata, world_size, args.global_batch_size)
     model = model.cuda()
 
     # Load checkpoint
@@ -382,7 +382,6 @@ def main():
         aggregated_voting=True,
     )
 
-    # Run evaluation
     if rank == 0:
         print("Starting evaluation...")
 
@@ -414,7 +413,6 @@ def main():
             print(f"  {metric}: {value:.4f} ({value * 100:.2f}%)")
         print(f"{'=' * 60}")
 
-        # Save results
         output_dir = args.output_dir or os.path.dirname(args.checkpoint)
         os.makedirs(output_dir, exist_ok=True)
 
@@ -427,13 +425,11 @@ def main():
             json.dump({
                 "checkpoint": args.checkpoint,
                 "config": args.config_name,
-                "model_type": args.model_type,
                 "max_eval_groups": args.max_eval_groups,
                 "results": results,
             }, f, indent=2)
         print(f"\nResults saved to: {results_file}")
 
-    # Cleanup
     if dist.is_initialized():
         dist.destroy_process_group()
 
