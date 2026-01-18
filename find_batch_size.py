@@ -29,7 +29,7 @@ from hydra.core.global_hydra import GlobalHydra
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dataset.common import PuzzleDatasetMetadata
-from models.common import load_model_class
+from utils.functions import load_model_class
 
 
 def parse_args():
